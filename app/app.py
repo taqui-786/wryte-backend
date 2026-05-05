@@ -7,7 +7,7 @@ from app.db import get_async_session
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db import create_db_and_tables
 from fastapi import FastAPI, HTTPException, Request, status, Depends
-from fastapi.responses import RedirectResponse, StreamingResponse
+from fastapi.responses import RedirectResponse, StreamingResponse, JSONResponse
 from contextlib import asynccontextmanager
 from dotenv import load_dotenv
 import os
@@ -41,6 +41,26 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Global exception handler — ensures CORS headers are present even on 500 errors.
+# Without this, an unhandled exception causes Starlette to return a bare 500
+# with no CORS headers, and the browser reports a CORS error instead of the real one.
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    origin = request.headers.get("origin", "")
+    allowed = [
+        "http://localhost:3000",
+        "https://wryte-ti.vercel.app",
+    ]
+    headers = {}
+    if origin in allowed:
+        headers["Access-Control-Allow-Origin"] = origin
+        headers["Access-Control-Allow-Credentials"] = "true"
+    return JSONResponse(
+        status_code=500,
+        content={"detail": f"Internal server error: {str(exc)}"},
+        headers=headers,
+    )
 
 
 @app.post(
