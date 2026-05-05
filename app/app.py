@@ -32,6 +32,7 @@ JWT = NextAuthJWTv4(secret=os.environ["NEXTAUTH_SECRET"],cookie_name="next-auth.
 
 origins = [
     "http://localhost:3000",
+    "https://wryte-ti.vercel.app",
 ]
 app.add_middleware(
     CORSMiddleware,
