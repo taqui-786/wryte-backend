@@ -169,7 +169,9 @@ async def my_agent(
         config=config,
         stream_mode="messages",
         context=context,
+        version="v2"
     ):
+        # print("\n\n chunk", chunk, "\n\n")
         if chunk.get("type") == "messages":
             message_chunk, _metadata = chunk["data"]
             if message_chunk.content:

@@ -1,13 +1,4 @@
-"""
-app.py — FastAPI application.
 
-Lifecycle:
-  • On startup  → open AsyncPostgresStore + AsyncPostgresSaver,
-                  run setup(), compile the LangGraph workflow.
-  • On shutdown → context managers close the DB connections cleanly.
-
-The compiled `workflow` lives on `app.state` so all routes share one instance.
-"""
 
 from __future__ import annotations
 
@@ -80,7 +71,7 @@ async def lifespan(app: FastAPI):
         # Context managers clean up connections on exit
 
 
-# ---------------------------------------------------------------------------
+# --------------------------------------------------------------------------- 
 # App & middleware
 # ---------------------------------------------------------------------------
 
@@ -165,7 +156,7 @@ async def chat(request: Request, jwt: dict = Depends(JWT)):
     user_input: str = body.get("message", "")
     thread_id: str = body.get("thread_id", "default")
     # JWT sub is the canonical user identifier
-    user_id: str = jwt.get("sub") or jwt.get("email") or "anonymous"
+    user_id: str = jwt.get("email") or "anonymous"
 
     workflow = request.app.state.workflow
 
@@ -176,8 +167,8 @@ async def chat(request: Request, jwt: dict = Depends(JWT)):
             thread_id=thread_id,
             user_id=user_id,
         ):
-            yield chunk
-        yield "DONE"
+            yield f"data: {chunk}\n\n"   # ← SSE format: must have "data: " prefix + double newline
+        yield "data: DONE\n\n"
 
     return StreamingResponse(stream_generator(), media_type="text/event-stream")
 
@@ -197,3 +188,4 @@ async def get_state(
             detail="Thread not found",
         )
     return state
+
