@@ -24,3 +24,6 @@ class UserResponse(BaseModel):
     created_at: datetime
     class Config:
         from_attributes = True
+
+class CreateDocumentPayload(BaseModel):
+    title: str

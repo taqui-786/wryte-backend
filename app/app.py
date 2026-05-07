@@ -1,6 +1,11 @@
 
 
-from __future__ import annotations
+
+from app.action import get_document_by_id
+from app.action import get_all_documents
+from app.action import create_new_document
+from app.action import get_user_id_by_email
+from app.schema import CreateDocumentPayload
 
 from typing import Annotated, AsyncGenerator
 
@@ -189,3 +194,55 @@ async def get_state(
         )
     return state
 
+# @app.get("/get-chats/{thread_id}", status_code=status.HTTP_200_OK)
+# async def get_chats(
+#     thread_id: str,
+#     request: Request,
+#     # jwt: dict = Depends(JWT),
+# ):
+#     workflow = request.app.state.workflow
+#     config = {"configurable": {"thread_id": thread_id}}
+#     # chats = await get_chats(workflow=workflow, thread_id=thread_id)
+#     chats = await get_chat_state(workflow, config)
+#     if chats is None:
+#         raise HTTPException(
+#             status_code=status.HTTP_404_NOT_FOUND,
+#             detail="Thread not found",
+#         )
+#     return chats
+
+@app.post('/new-document', status_code=status.HTTP_201_CREATED)
+async def new_document(
+    payload: CreateDocumentPayload,
+    jwt: dict = Depends(JWT),
+    session: AsyncSession = Depends(get_async_session)
+):
+    user_email: str = jwt.get("email") or "anonymous"
+    user_id = await get_user_id_by_email(user_email, session)
+    document = await create_new_document(user_id, payload.title, session)
+    print("Document created")
+    return {'document_id' : document} 
+    
+@app.get('/get-all-documents',status_code=status.HTTP_200_OK)
+async def get_documents(
+    jwt: dict = Depends(JWT),
+    session: AsyncSession = Depends(get_async_session)
+):
+    user_email: str = jwt.get("email") or "anonymous"
+    user_id = await get_user_id_by_email(user_email, session)
+    documents = await get_all_documents(user_id, session)
+    return documents
+
+@app.get('/get-document/{document_id}',status_code=status.HTTP_200_OK)
+async def get_document(
+    document_id: str,
+    jwt: dict = Depends(JWT),
+    session: AsyncSession = Depends(get_async_session)
+):
+    document = await get_document_by_id(document_id, session)
+    if document is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Document not found",
+        )
+    return document

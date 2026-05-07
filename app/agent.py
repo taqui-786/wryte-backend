@@ -1,11 +1,3 @@
-"""
-agent.py — LangGraph agent with:
-  • Short-term memory  → AsyncPostgresSaver (per-thread checkpointing)
-  • Long-term memory   → AsyncPostgresStore (cross-thread, per-user memories)
-
-The compiled `workflow` is built once during the FastAPI lifespan (see app.py)
-and stored on the app state so every request shares the same graph object.
-"""
 
 from __future__ import annotations
 
