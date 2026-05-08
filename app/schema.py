@@ -1,4 +1,5 @@
 
+import uuid
 from datetime import datetime
 import uuid
 from pydantic import BaseModel
@@ -27,3 +28,9 @@ class UserResponse(BaseModel):
 
 class CreateDocumentPayload(BaseModel):
     title: str
+
+
+class CreateThreadPayload(BaseModel):
+    doc_id: str
+    conversation:str
+    thread_id:str

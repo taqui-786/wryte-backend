@@ -39,19 +39,33 @@ class User(Base):
 
     docs = relationship("Doc", back_populates="user")
 
+class Thread(Base):
+    __tablename__ = "threads"
+    id = Column(UUID(as_uuid=True), primary_key=True)
+    title = Column(String, nullable=False)
+    updated_at = Column(DateTime, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    doc_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("docs.id"),
+        nullable=False
+    )
+    doc = relationship("Doc", back_populates="threads")
 
 class Doc(Base):
     __tablename__ = "docs"
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     title = Column(String, nullable=False)
     content = Column(String, nullable=True)
-
+    updated_at = Column(DateTime, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=datetime.utcnow)
     user_id = Column(
         UUID(as_uuid=True),
         ForeignKey("users.id"),
         nullable=False
     )
     user = relationship("User", back_populates="docs")
+    threads = relationship("Thread", back_populates="doc")
 
 
 engine = create_async_engine(DATABASE_URL, pool_pre_ping=True)
@@ -66,3 +80,19 @@ async def create_db_and_tables():
 async def get_async_session() -> AsyncGenerator[AsyncSession, None]:
     async with async_session_maker() as session:
         yield session
+
+
+
+
+
+
+# Migration commands
+
+# 1. Generate migration (diffs your models vs the real DB)
+
+# uv run alembic revision --autogenerate -m "describe your change"
+
+# 2. Review the file in alembic/versions/ — make sure it looks correct
+
+# 3. Apply to the database
+# uv run alembic upgrade head

@@ -1,6 +1,7 @@
 
-from __future__ import annotations
-
+from langchain_core.output_parsers import StrOutputParser
+from langchain_core.prompts import ChatPromptTemplate
+import hashlib
 import uuid
 from dataclasses import dataclass
 from typing import AsyncGenerator
@@ -38,7 +39,13 @@ llm = ChatNVIDIA(
     },
 )
 
-
+llm_secondary = ChatNVIDIA(
+    model="stepfun-ai/step-3.5-flash",
+    api_key=os.getenv("NVIDIA_API_KEY`"),
+    temperature=1,
+    top_p=0.95,
+    max_completion_tokens=1024,
+)
 # ---------------------------------------------------------------------------
 # State & Context
 # ---------------------------------------------------------------------------
@@ -66,8 +73,9 @@ async def chat_node(state: ChatState, runtime: Runtime[UserContext]):
     3. If the user explicitly asks to remember something, extracts and stores it.
     4. Calls the LLM and returns the response.
     """
-    user_id = runtime.context.user_id
-    memory_namespace = ("memories", user_id)
+    user_email = runtime.context.user_id
+    user_id = int(hashlib.md5(user_email.encode()).hexdigest(), 16) % 100000
+    memory_namespace = ("memories", str(user_id))
 
     last_message = state["messages"][-1]
     last_content: str = last_message.content if hasattr(last_message, "content") else str(last_message)
@@ -87,6 +95,9 @@ async def chat_node(state: ChatState, runtime: Runtime[UserContext]):
         f"{memory_context}\n\n"
         "Use these memories naturally when they are relevant. "
         "Do not mention the memory system explicitly unless asked."
+        "Reply in markdown format."
+        "Don't be very lengthy in your responses, be concise and to the point."
+        "Always do thinking process before replying. and also reveal mapped with <thinking>your reasoning</thinking>"
     )
 
     # --- Store new memory if user explicitly asks ---
@@ -190,3 +201,41 @@ async def get_chat_state(
     except Exception as exc:
         print(f"[get_chat_state] error: {exc}")
         return None
+
+
+async def generate_title_for_chat(conversation:str):
+    try:
+        prompt = ChatPromptTemplate.from_template(
+            """
+You are an AI assistant that generates concise chat titles for a writing editor application.
+
+Your task is to create a short, natural, and meaningful title based on:
+1. The user's first message
+2. The assistant's initial response
+
+The title should summarize the main intent or topic of the conversation, similar to how ChatGPT names chats.
+
+Rules:
+- Maximum 5 words
+- Clear and human-friendly
+- Do not use quotes
+- Avoid generic titles like "New Chat" or "Conversation"
+- Avoid unnecessary filler words
+- Return only the title
+
+Conversation:
+{conversation}
+
+Title:
+"""
+        )
+        output_parser = StrOutputParser()
+        chain = prompt | llm_secondary | output_parser
+        response = await chain.ainvoke({"conversation": conversation})
+        print("response----",response)
+        return response
+    except Exception as e:
+        print(e)
+        raise e
+    
+    

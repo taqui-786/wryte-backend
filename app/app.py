@@ -1,6 +1,9 @@
 
 
 
+from app.agent import generate_title_for_chat
+from app.action import add_new_thread
+from app.schema import CreateThreadPayload
 from app.action import get_document_by_id
 from app.action import get_all_documents
 from app.action import create_new_document
@@ -246,3 +249,14 @@ async def get_document(
             detail="Document not found",
         )
     return document
+
+@app.post('/add-thread', status_code=status.HTTP_201_CREATED)
+async def add_thread(
+    payload: CreateThreadPayload,
+    jwt: dict = Depends(JWT),
+    session: AsyncSession = Depends(get_async_session)
+):
+    title = await generate_title_for_chat(payload.conversation)
+    thread = await add_new_thread(payload.thread_id, payload.doc_id, title, session)
+    print("Thread created")
+    return {'thread_id' : thread,'title' : title}
