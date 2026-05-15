@@ -95,6 +95,10 @@ async def lifespan(app: FastAPI):
 # ---------------------------------------------------------------------------
 
 app = FastAPI(lifespan=lifespan)
+ALLOWED_ORIGINS = [
+    "http://localhost:3000",
+    "https://wryte-ti.vercel.app",
+]
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
@@ -103,10 +107,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-ALLOWED_ORIGINS = [
-    "http://localhost:3000",
-    "https://wryte-ti.vercel.app",
-]
+
 # Render sets the RENDER env var automatically in production.
 # NextAuth v4 uses "__Secure-next-auth.session-token" on HTTPS (prod)
 # and "next-auth.session-token" on HTTP (local dev).
