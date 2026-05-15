@@ -1,4 +1,4 @@
-
+from json import dumps
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate
 import hashlib
@@ -8,7 +8,7 @@ from typing import AsyncGenerator
 
 from dotenv import load_dotenv
 from langchain_core.messages import HumanMessage, messages_to_dict
-from langchain_nvidia_ai_endpoints import ChatNVIDIA
+from langchain_nvidia_ai_endpoints import ChatNVIDIA, NVIDIAEmbeddings
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from langgraph.constants import END, START
 from langgraph.graph import StateGraph
@@ -28,27 +28,36 @@ load_dotenv()
 # ---------------------------------------------------------------------------
 
 llm = ChatNVIDIA(
-    model="qwen/qwen3.5-122b-a10b",
+    model="stepfun-ai/step-3.5-flash",
     api_key=os.getenv("NVIDIA_API_KEY"),
     temperature=1,
     top_p=0.95,
     max_completion_tokens=16384,
     model_kwargs={
         "enable_thinking": True,
-        "reasoning_budget": 16384,
+        "reasoning_budget":3000
     },
 )
 
 llm_secondary = ChatNVIDIA(
     model="stepfun-ai/step-3.5-flash",
-    api_key=os.getenv("NVIDIA_API_KEY`"),
+    api_key=os.getenv("NVIDIA_API_KEY"),
     temperature=1,
     top_p=0.95,
     max_completion_tokens=1024,
 )
+
+# Embedding model — 1024-dimensional vectors produced by nvidia/nv-embedqa-e5-v5.
+EMBEDDING_DIMS = 1024
+embeddings = NVIDIAEmbeddings(
+    model="nvidia/nv-embedqa-e5-v5",
+    api_key=os.getenv("NVIDIA_API_KEY"),
+)
+
 # ---------------------------------------------------------------------------
 # State & Context
 # ---------------------------------------------------------------------------
+
 
 class ChatState(TypedDict):
     messages: Annotated[list[BaseModel], add_messages]
@@ -57,12 +66,20 @@ class ChatState(TypedDict):
 @dataclass
 class UserContext:
     """Passed at invocation time to identify the current user for memory namespacing."""
+
     user_id: str
 
-
+# ---------------------------------------------------------------------------
+# My Tools --- Taqui
+# ---------------------------------------------------------------------------
+def multiply(a: int, b: int) -> int:
+    return a * b
+    
+llm_with_tool = llm.bind_tools([multiply])
 # ---------------------------------------------------------------------------
 # Graph node
 # ---------------------------------------------------------------------------
+
 
 async def chat_node(state: ChatState, runtime: Runtime[UserContext]):
     """
@@ -78,7 +95,9 @@ async def chat_node(state: ChatState, runtime: Runtime[UserContext]):
     memory_namespace = ("memories", str(user_id))
 
     last_message = state["messages"][-1]
-    last_content: str = last_message.content if hasattr(last_message, "content") else str(last_message)
+    last_content: str = (
+        last_message.content if hasattr(last_message, "content") else str(last_message)
+    )
 
     # --- Retrieve relevant long-term memories ---
     memories = await runtime.store.asearch(
@@ -97,18 +116,19 @@ async def chat_node(state: ChatState, runtime: Runtime[UserContext]):
         "Do not mention the memory system explicitly unless asked."
         "Reply in markdown format."
         "Don't be very lengthy in your responses, be concise and to the point."
-        "Always do thinking process before replying. and also reveal mapped with <thinking>your reasoning</thinking>"
+        "Always do short thinking and then reply you final content"
+        "You have access to tools that can help you with certain tasks. Use them when needed."
     )
 
     # --- Store new memory if user explicitly asks ---
     if "remember" in last_content.lower():
         # Ask the LLM to extract what should be remembered
         extraction_prompt = (
-            f"The user said: \"{last_content}\"\n\n"
+            f'The user said: "{last_content}"\n\n'
             "Extract a single, concise fact to remember about the user from this message. "
             "Return only the fact, nothing else."
         )
-        extraction = await llm.ainvoke([{"role": "user", "content": extraction_prompt}])
+        extraction = await llm_with_tool.ainvoke([{"role": "user", "content": extraction_prompt}])
         memory_text = extraction.content.strip()
         if memory_text:
             await runtime.store.aput(
@@ -127,6 +147,7 @@ async def chat_node(state: ChatState, runtime: Runtime[UserContext]):
 # ---------------------------------------------------------------------------
 # Graph builder
 # ---------------------------------------------------------------------------
+
 
 def build_graph(
     checkpointer: AsyncPostgresSaver,
@@ -153,6 +174,7 @@ def build_graph(
 # Public API — called by app.py routes
 # ---------------------------------------------------------------------------
 
+
 async def my_agent(
     workflow: CompiledStateGraph,
     user_input: str,
@@ -172,13 +194,20 @@ async def my_agent(
         config=config,
         stream_mode="messages",
         context=context,
-        version="v2"
+        version="v2",
     ):
-        # print("\n\n chunk", chunk, "\n\n")
+        print(chunk)
         if chunk.get("type") == "messages":
             message_chunk, _metadata = chunk["data"]
-            if message_chunk.content:
-                yield message_chunk.content
+            # Only yield if there is actual content
+            if message_chunk:
+                yield {
+                    "content": message_chunk.content,
+                    "reasoning": message_chunk.additional_kwargs.get(
+                        "reasoning_content",
+                        "",
+                    ),
+                }
 
 
 async def get_chat_state(
@@ -197,13 +226,14 @@ async def get_chat_state(
         if "messages" in values:
             values["messages"] = messages_to_dict(values["messages"])
         state_list[0] = values
+
         return state_list
     except Exception as exc:
         print(f"[get_chat_state] error: {exc}")
         return None
 
 
-async def generate_title_for_chat(conversation:str):
+async def generate_title_for_chat(conversation: str):
     try:
         prompt = ChatPromptTemplate.from_template(
             """
@@ -232,10 +262,8 @@ Title:
         output_parser = StrOutputParser()
         chain = prompt | llm_secondary | output_parser
         response = await chain.ainvoke({"conversation": conversation})
-        print("response----",response)
+        print("response----", response)
         return response
     except Exception as e:
         print(e)
         raise e
-    
-    

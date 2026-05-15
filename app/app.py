@@ -13,7 +13,7 @@ from app.schema import CreateDocumentPayload
 from typing import Annotated, AsyncGenerator
 
 from app.action import get_user_by_email
-from app.agent import build_graph, get_chat_state, my_agent
+from app.agent import build_graph, get_chat_state, my_agent, embeddings, EMBEDDING_DIMS
 from app.db import User, create_db_and_tables, get_async_session
 from app.schema import SaveUserPayload, UserResponse
 from contextlib import asynccontextmanager
@@ -21,10 +21,11 @@ from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
-from fastapi_nextauth_jwt import NextAuthJWTv4
+from fastapi_nextauth_jwt import NextAuthJWTv4,NextAuthJWT
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from langgraph.store.postgres.aio import AsyncPostgresStore
 from sqlalchemy.ext.asyncio import AsyncSession
+import json
 import os
 
 load_dotenv()
@@ -66,10 +67,20 @@ async def lifespan(app: FastAPI):
     await create_db_and_tables()
 
     async with (
-        AsyncPostgresStore.from_conn_string(DB_URI) as store,
+        # index= tells LangGraph to embed every memory on write and use
+        # cosine-similarity when asearch() is called (semantic search).
+        # dims must match the output of your embedding model (1044 here).
+        AsyncPostgresStore.from_conn_string(
+            DB_URI,
+            index={
+                "embed": embeddings,   # NVIDIAEmbeddings instance from agent.py
+                "dims": EMBEDDING_DIMS,  # 1044 — must match the model
+            },
+        ) as store,
         AsyncPostgresSaver.from_conn_string(DB_URI) as checkpointer,
     ):
-        # Idempotent — creates tables if they don't exist yet
+        # Idempotent — creates tables if they don't exist yet.
+        # The store.setup() also creates the vector-index column in Postgres.
         await store.setup()
         await checkpointer.setup()
 
@@ -84,7 +95,14 @@ async def lifespan(app: FastAPI):
 # ---------------------------------------------------------------------------
 
 app = FastAPI(lifespan=lifespan)
-JWT = NextAuthJWTv4(secret=os.environ["NEXTAUTH_SECRET"])
+# Render sets the RENDER env var automatically in production.
+# NextAuth v4 uses "__Secure-next-auth.session-token" on HTTPS (prod)
+# and "next-auth.session-token" on HTTP (local dev).
+IS_PRODUCTION = os.environ.get("RENDER") is not None
+JWT = NextAuthJWTv4(
+    secret=os.environ["NEXTAUTH_SECRET"],
+    secure_cookie=IS_PRODUCTION,
+)
 
 ALLOWED_ORIGINS = [
     "http://localhost:3000",
@@ -175,7 +193,7 @@ async def chat(request: Request, jwt: dict = Depends(JWT)):
             thread_id=thread_id,
             user_id=user_id,
         ):
-            yield f"data: {chunk}\n\n"   # ← SSE format: must have "data: " prefix + double newline
+            yield f"data: {json.dumps(chunk)}\n\n"
         yield "data: DONE\n\n"
 
     return StreamingResponse(stream_generator(), media_type="text/event-stream")

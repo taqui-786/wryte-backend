@@ -2,7 +2,7 @@ from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate
 import os
 from dotenv import load_dotenv
-from langchain_nvidia_ai_endpoints import ChatNVIDIA
+from langchain_nvidia_ai_endpoints import ChatNVIDIA,NVIDIAEmbeddings
 from langchain_core.messages import HumanMessage
 from langgraph.graph import StateGraph, START
 from langgraph.graph.message import add_messages
@@ -13,11 +13,14 @@ load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), "..", ".env"))
 
 # ── LLM ──────────────────────────────────────────────────────────────────────
 llm = ChatNVIDIA(
-    model="stepfun-ai/step-3.5-flash",
+    model="mistralai/mixtral-8x22b-instruct-v0.1",
     api_key=os.getenv("NVIDIA_API_KEY`"),
     temperature=1,
     top_p=0.95,
     max_completion_tokens=1024,
+    model_kwargs={
+        "enable_thinking": True,
+    },
 )
 
 
@@ -88,3 +91,7 @@ Title:
 chat = """me - Hey how are you
     Ai - i am fine what about y"""
 # generate_title_for_chat(chat)
+# embeddings = NVIDIAEmbeddings(model="nvidia/nv-embedqa-e5-v5",api_key=os.getenv("NVIDIA_API_KEY"))
+# print(embeddings.embed_query("Hello, how are you?"))
+
+print(llm.invoke('Hey there'))
