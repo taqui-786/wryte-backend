@@ -34,3 +34,12 @@ class CreateThreadPayload(BaseModel):
     doc_id: str
     conversation:str
     thread_id:str
+
+class ChatPayload(BaseModel):
+    message: str
+    thread_id: str
+    user_id: str
+
+class GenerateChatTitlePayload(BaseModel):
+    conversation: str
+    

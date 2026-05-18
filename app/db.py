@@ -29,43 +29,43 @@ class Base(DeclarativeBase):
 #     created_at = Column(DateTime, default=datetime.utcnow)
 
 
-class User(Base):
-    __tablename__ = "users"
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    name = Column(String, nullable=False)
-    email = Column(String, nullable=False, unique=True)
-    avatar_url = Column(String, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
+# class User(Base):
+#     __tablename__ = "users"
+#     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+#     name = Column(String, nullable=False)
+#     email = Column(String, nullable=False, unique=True)
+#     avatar_url = Column(String, nullable=False)
+#     created_at = Column(DateTime, default=datetime.utcnow)
 
-    docs = relationship("Doc", back_populates="user")
+#     docs = relationship("Doc", back_populates="user")
 
-class Thread(Base):
-    __tablename__ = "threads"
-    id = Column(UUID(as_uuid=True), primary_key=True)
-    title = Column(String, nullable=False)
-    updated_at = Column(DateTime, onupdate=datetime.utcnow)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    doc_id = Column(
-        UUID(as_uuid=True),
-        ForeignKey("docs.id"),
-        nullable=False
-    )
-    doc = relationship("Doc", back_populates="threads")
+# class Thread(Base):
+#     __tablename__ = "threads"
+#     id = Column(UUID(as_uuid=True), primary_key=True)
+#     title = Column(String, nullable=False)
+#     updated_at = Column(DateTime, onupdate=datetime.utcnow)
+#     created_at = Column(DateTime, default=datetime.utcnow)
+#     doc_id = Column(
+#         UUID(as_uuid=True),
+#         ForeignKey("docs.id"),
+#         nullable=False
+#     )
+#     doc = relationship("Doc", back_populates="threads")
 
-class Doc(Base):
-    __tablename__ = "docs"
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    title = Column(String, nullable=False)
-    content = Column(String, nullable=True)
-    updated_at = Column(DateTime, onupdate=datetime.utcnow)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    user_id = Column(
-        UUID(as_uuid=True),
-        ForeignKey("users.id"),
-        nullable=False
-    )
-    user = relationship("User", back_populates="docs")
-    threads = relationship("Thread", back_populates="doc")
+# class Doc(Base):
+#     __tablename__ = "docs"
+#     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+#     title = Column(String, nullable=False)
+#     content = Column(String, nullable=True)
+#     updated_at = Column(DateTime, onupdate=datetime.utcnow)
+#     created_at = Column(DateTime, default=datetime.utcnow)
+#     user_id = Column(
+#         UUID(as_uuid=True),
+#         ForeignKey("users.id"),
+#         nullable=False
+#     )
+#     user = relationship("User", back_populates="docs")
+#     threads = relationship("Thread", back_populates="doc")
 
 
 engine = create_async_engine(DATABASE_URL, pool_pre_ping=True)

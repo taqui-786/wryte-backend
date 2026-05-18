@@ -28,7 +28,7 @@ load_dotenv()
 # ---------------------------------------------------------------------------
 
 llm = ChatNVIDIA(
-    model="stepfun-ai/step-3.5-flash",
+    model="nvidia/nemotron-3-super-120b-a12b",
     api_key=os.getenv("NVIDIA_API_KEY"),
     temperature=1,
     top_p=0.95,
@@ -138,7 +138,7 @@ async def chat_node(state: ChatState, runtime: Runtime[UserContext]):
             )
 
     # --- Call the model ---
-    response = await llm.ainvoke(
+    response = await llm_with_tool.ainvoke(
         [{"role": "system", "content": system_prompt}] + list(state["messages"])
     )
     return {"messages": [response]}
@@ -196,7 +196,7 @@ async def my_agent(
         context=context,
         version="v2",
     ):
-        print(chunk)
+        # print(chunk)
         if chunk.get("type") == "messages":
             message_chunk, _metadata = chunk["data"]
             # Only yield if there is actual content

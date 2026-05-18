@@ -1,20 +1,21 @@
 
 
 
-from app.agent import generate_title_for_chat
-from app.action import add_new_thread
-from app.schema import CreateThreadPayload
-from app.action import get_document_by_id
-from app.action import get_all_documents
-from app.action import create_new_document
-from app.action import get_user_id_by_email
-from app.schema import CreateDocumentPayload
+from sqlalchemy import text
+# from app.agent import generate_title_for_chat
+# from app.action import add_new_thread
+# from app.schema import CreateThreadPayload
+# from app.action import get_document_by_id
+# from app.action import get_all_documents
+# from app.action import create_new_document
+# from app.action import get_user_id_by_email
+from app.schema import ChatPayload, CreateDocumentPayload, GenerateChatTitlePayload
 
 from typing import Annotated, AsyncGenerator
 
-from app.action import get_user_by_email
-from app.agent import build_graph, get_chat_state, my_agent, embeddings, EMBEDDING_DIMS
-from app.db import User, create_db_and_tables, get_async_session
+# from app.action import get_user_by_email
+from app.agent import build_graph, embeddings, EMBEDDING_DIMS, generate_title_for_chat, my_agent
+from app.db import get_async_session
 from app.schema import SaveUserPayload, UserResponse
 from contextlib import asynccontextmanager
 from dotenv import load_dotenv
@@ -29,6 +30,7 @@ import json
 import os
 
 load_dotenv()
+
 
 def _psycopg_uri(url: str) -> str:
     """
@@ -64,7 +66,7 @@ DB_URI = _psycopg_uri(os.environ["DATABASE_URL"])
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Create application DB tables (SQLAlchemy models)
-    await create_db_and_tables()
+    # await create_db_and_tables()
 
     async with (
         # index= tells LangGraph to embed every memory on write and use
@@ -74,7 +76,7 @@ async def lifespan(app: FastAPI):
             DB_URI,
             index={
                 "embed": embeddings,   # NVIDIAEmbeddings instance from agent.py
-                "dims": EMBEDDING_DIMS,  # 1044 — must match the model
+                "dims": EMBEDDING_DIMS,  # 1024 — must match the model
             },
         ) as store,
         AsyncPostgresSaver.from_conn_string(DB_URI) as checkpointer,
@@ -108,86 +110,33 @@ app.add_middleware(
 )
 
 
-# Render sets the RENDER env var automatically in production.
-# NextAuth v4 uses "__Secure-next-auth.session-token" on HTTPS (prod)
-# and "next-auth.session-token" on HTTP (local dev).
-IS_PRODUCTION = os.environ.get("RENDER") is not None
-JWT = NextAuthJWTv4(
-    secret=os.environ["NEXTAUTH_SECRET"],
-    secure_cookie=IS_PRODUCTION,
-)
 
-
-
-
-# Global exception handler — ensures CORS headers survive unhandled 500s.
-@app.exception_handler(Exception)
-async def global_exception_handler(request: Request, exc: Exception):
-    origin = request.headers.get("origin", "")
-    headers = {}
-    if origin in ALLOWED_ORIGINS:
-        headers["Access-Control-Allow-Origin"] = origin
-        headers["Access-Control-Allow-Credentials"] = "true"
-    return JSONResponse(
-        status_code=500,
-        content={"detail": f"Internal server error: {str(exc)}"},
-        headers=headers,
-    )
 
 
 # ---------------------------------------------------------------------------
 # Routes
 # ---------------------------------------------------------------------------
 
-@app.post(
-    "/user/save",
-    response_model=UserResponse,
-    status_code=status.HTTP_201_CREATED,
-)
-async def save_new_logged_in_user(
-    payload: SaveUserPayload,
-    session: AsyncSession = Depends(get_async_session),
-):
-    is_user = await get_user_by_email(payload.email, session)
-    if is_user is not None:
-        print("user already exists")
-        return is_user
-
-    new_user = User(
-        name=payload.name,
-        email=payload.email,
-        avatar_url=payload.image,
-    )
-    session.add(new_user)
-    await session.commit()
-    await session.refresh(new_user)
-    return new_user
-
-
 @app.get("/")
-async def return_jwt(jwt: Annotated[dict, Depends(JWT)]):
-    return jwt
+async def return_jwt():
+    return {"message": "Hello World"}
 
+@app.get("/health")
+async def health(session: AsyncSession = Depends(get_async_session)):
+   user = await session.execute(text('SELECT * FROM "user"'))
+   result = user.fetchall()
+   print('res - ',result)
+   # Convert Row objects to dictionaries for JSON serialization
+   result_dict = [dict(row._mapping) for row in result]
+   return {"status": "ok", "user": result_dict}
 
 @app.post("/chat")
-async def chat(request: Request, jwt: dict = Depends(JWT)):
-    """
-    Stream agent responses token-by-token.
+async def chat(payload:ChatPayload):
 
-    Expects JSON body:
-        { "message": "...", "thread_id": "..." }
-
-    The user_id is taken from the JWT so memories are always scoped
-    to the authenticated user — no client-supplied user_id is trusted.
-    """
-    body = await request.json()
-    user_input: str = body.get("message", "")
-    thread_id: str = body.get("thread_id", "default")
-    # JWT sub is the canonical user identifier
-    user_id: str = jwt.get("email") or "anonymous"
-
-    workflow = request.app.state.workflow
-
+    user_input: str = payload.message
+    thread_id: str = payload.thread_id
+    user_id: str = payload.user_id
+    workflow = app.state.workflow
     async def stream_generator() -> AsyncGenerator[str, None]:
         async for chunk in my_agent(
             workflow=workflow,
@@ -200,83 +149,57 @@ async def chat(request: Request, jwt: dict = Depends(JWT)):
 
     return StreamingResponse(stream_generator(), media_type="text/event-stream")
 
+@app.post("/generate-chat-title")
+async def generate_chat_title(payload:GenerateChatTitlePayload):
+    conversation: str = payload.conversation
+    title = await generate_title_for_chat(conversation)
+    return {"title": title}
 
-@app.get("/get-state/{thread_id}", status_code=status.HTTP_200_OK)
-async def get_state(
-    thread_id: str,
-    request: Request,
-    jwt: dict = Depends(JWT),
-):
-    # print(jwt.get("email"))
-    workflow = request.app.state.workflow
-    state = await get_chat_state(workflow=workflow, thread_id=thread_id)
-    if state is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Thread not found",
-        )
-    return state
+# @app.post("/chat")
+# async def chat(request: Request, jwt: dict = Depends(JWT)):
+#     """
+#     Stream agent responses token-by-token.
 
-# @app.get("/get-chats/{thread_id}", status_code=status.HTTP_200_OK)
-# async def get_chats(
+#     Expects JSON body:
+#         { "message": "...", "thread_id": "..." }
+
+#     The user_id is taken from the JWT so memories are always scoped
+#     to the authenticated user — no client-supplied user_id is trusted.
+#     """
+#     body = await request.json()
+#     user_input: str = body.get("message", "")
+#     thread_id: str = body.get("thread_id", "default")
+#     # JWT sub is the canonical user identifier
+#     user_id: str = jwt.get("email") or "anonymous"
+
+    # workflow = request.app.state.workflow
+
+    # async def stream_generator() -> AsyncGenerator[str, None]:
+    #     async for chunk in my_agent(
+    #         workflow=workflow,
+    #         user_input=user_input,
+    #         thread_id=thread_id,
+    #         user_id=user_id,
+    #     ):
+    #         yield f"data: {json.dumps(chunk)}\n\n"
+    #     yield "data: DONE\n\n"
+
+    # return StreamingResponse(stream_generator(), media_type="text/event-stream")
+
+
+# @app.get("/get-state/{thread_id}", status_code=status.HTTP_200_OK)
+# async def get_state(
 #     thread_id: str,
 #     request: Request,
-#     # jwt: dict = Depends(JWT),
+#     jwt: dict = Depends(JWT),
 # ):
+#     # print(jwt.get("email"))
 #     workflow = request.app.state.workflow
-#     config = {"configurable": {"thread_id": thread_id}}
-#     # chats = await get_chats(workflow=workflow, thread_id=thread_id)
-#     chats = await get_chat_state(workflow, config)
-#     if chats is None:
+#     state = await get_chat_state(workflow=workflow, thread_id=thread_id)
+#     if state is None:
 #         raise HTTPException(
 #             status_code=status.HTTP_404_NOT_FOUND,
 #             detail="Thread not found",
 #         )
-#     return chats
+#     return state
 
-@app.post('/new-document', status_code=status.HTTP_201_CREATED)
-async def new_document(
-    payload: CreateDocumentPayload,
-    jwt: dict = Depends(JWT),
-    session: AsyncSession = Depends(get_async_session)
-):
-    user_email: str = jwt.get("email") or "anonymous"
-    user_id = await get_user_id_by_email(user_email, session)
-    document = await create_new_document(user_id, payload.title, session)
-    print("Document created")
-    return {'document_id' : document} 
-    
-@app.get('/get-all-documents',status_code=status.HTTP_200_OK)
-async def get_documents(
-    jwt: dict = Depends(JWT),
-    session: AsyncSession = Depends(get_async_session)
-):
-    user_email: str = jwt.get("email") or "anonymous"
-    user_id = await get_user_id_by_email(user_email, session)
-    documents = await get_all_documents(user_id, session)
-    return documents
-
-@app.get('/get-document/{document_id}',status_code=status.HTTP_200_OK)
-async def get_document(
-    document_id: str,
-    jwt: dict = Depends(JWT),
-    session: AsyncSession = Depends(get_async_session)
-):
-    document = await get_document_by_id(document_id, session)
-    if document is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Document not found",
-        )
-    return document
-
-@app.post('/add-thread', status_code=status.HTTP_201_CREATED)
-async def add_thread(
-    payload: CreateThreadPayload,
-    jwt: dict = Depends(JWT),
-    session: AsyncSession = Depends(get_async_session)
-):
-    title = await generate_title_for_chat(payload.conversation)
-    thread = await add_new_thread(payload.thread_id, payload.doc_id, title, session)
-    print("Thread created")
-    return {'thread_id' : thread,'title' : title}
