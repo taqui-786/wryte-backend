@@ -1847,6 +1847,20 @@ wheels = [
 ]
 
 [[package]]
+name = "tinyfish"
+version = "0.2.5"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "httpx" },
+    { name = "pydantic" },
+    { name = "tenacity" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/78/bf/ff5676fde1a9ad9183a127a5135a57736d114266bded4ae38f1d01cf9663/tinyfish-0.2.5.tar.gz", hash = "sha256:841095d97620e90afb49f97fae1ec8dc88dec78a8ee352c93252635f901a2fba", size = 58998, upload-time = "2026-04-03T01:02:16.533Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/6c/a6/6ab83742e0074bdcbad5527bc451c7497dca1836a5153dfb0e6f28eb6227/tinyfish-0.2.5-py3-none-any.whl", hash = "sha256:05a763f10bdb7be958df4203010d321aecaf767cf64472ea3f48fe28c00cf921", size = 28056, upload-time = "2026-04-03T01:02:15.525Z" },
+]
+
+[[package]]
 name = "typing-extensions"
 version = "4.15.0"
 source = { registry = "https://pypi.org/simple" }
@@ -2101,6 +2115,7 @@ dependencies = [
     { name = "python-multipart" },
     { name = "requests" },
     { name = "sqlalchemy" },
+    { name = "tinyfish" },
     { name = "uvicorn", extra = ["standard"] },
 ]
 
@@ -2124,6 +2139,7 @@ requires-dist = [
     { name = "python-multipart", specifier = ">=0.0.27" },
     { name = "requests", specifier = ">=2.33.1" },
     { name = "sqlalchemy", specifier = ">=2.0.49" },
+    { name = "tinyfish", specifier = ">=0.2.5" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.46.0" },
 ]
 

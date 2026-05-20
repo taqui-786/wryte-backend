@@ -8,6 +8,7 @@ from typing import AsyncGenerator
 
 from dotenv import load_dotenv
 from langchain_core.messages import HumanMessage, messages_to_dict
+from langchain_core.tools import tool
 from langchain_nvidia_ai_endpoints import ChatNVIDIA, NVIDIAEmbeddings
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from langgraph.constants import END, START
@@ -19,10 +20,13 @@ from langgraph.store.postgres.aio import AsyncPostgresStore
 from pydantic import BaseModel
 from typing import Annotated, TypedDict
 import os
+from langgraph.prebuilt import ToolNode, tools_condition
+from tinyfish import TinyFish
 
 load_dotenv()
 
 
+client = TinyFish(api_key=os.getenv("TINYFISH_API_KEY"))
 # ---------------------------------------------------------------------------
 # LLM
 # ---------------------------------------------------------------------------
@@ -52,6 +56,7 @@ EMBEDDING_DIMS = 1024
 embeddings = NVIDIAEmbeddings(
     model="nvidia/nv-embedqa-e5-v5",
     api_key=os.getenv("NVIDIA_API_KEY"),
+    truncate="END",
 )
 
 # ---------------------------------------------------------------------------
@@ -72,14 +77,28 @@ class UserContext:
 # ---------------------------------------------------------------------------
 # My Tools --- Taqui
 # ---------------------------------------------------------------------------
+@tool
 def multiply(a: int, b: int) -> int:
+    """Multiply two numbers."""
     return a * b
-    
-llm_with_tool = llm.bind_tools([multiply])
+
+@tool
+def search_agent(query: str) -> list:
+    """Search the web for information. give a short query as input max 400 token"""
+    response = client.search.query(query=query, location="US")
+    top_urls = [r.url for r in response.results[:3]]
+
+    # Step 2: Fetch full content
+    pages = client.fetch.get_contents(urls=top_urls, format="markdown")
+    return pages.results
+
+my_tools = [multiply, search_agent]    
+llm_with_tool = llm.bind_tools(my_tools)
 # ---------------------------------------------------------------------------
 # Graph node
 # ---------------------------------------------------------------------------
 
+tool_node = ToolNode(my_tools)
 
 async def chat_node(state: ChatState, runtime: Runtime[UserContext]):
     """
@@ -161,8 +180,11 @@ def build_graph(
     """
     builder = StateGraph(ChatState, context_schema=UserContext)
     builder.add_node("chat_node", chat_node)
+    builder.add_node("tools", tool_node)
+    # ----
     builder.add_edge(START, "chat_node")
-    builder.add_edge("chat_node", END)
+    builder.add_conditional_edges("chat_node", tools_condition)
+    builder.add_edge("tools","chat_node")
 
     return builder.compile(
         checkpointer=checkpointer,
@@ -207,6 +229,7 @@ async def my_agent(
                         "reasoning_content",
                         "",
                     ),
+                    "tool-calls": getattr(message_chunk, "tool_calls", []) or [],
                 }
 
 
@@ -217,17 +240,14 @@ async def get_chat_state(
     """Return the persisted state for a thread, with messages serialised to dicts."""
     try:
         config = {"configurable": {"thread_id": thread_id}}
-        res = await workflow.aget_state(config=config)
-        if res is None:
+        snapshot = await workflow.aget_state(config=config)
+        if snapshot is None:
             return None
 
-        state_list = list(res)
-        values = dict(state_list[0])
+        values = dict(snapshot.values)
         if "messages" in values:
             values["messages"] = messages_to_dict(values["messages"])
-        state_list[0] = values
-
-        return state_list
+        return values
     except Exception as exc:
         print(f"[get_chat_state] error: {exc}")
         return None

@@ -14,7 +14,7 @@ from app.schema import ChatPayload, CreateDocumentPayload, GenerateChatTitlePayl
 from typing import Annotated, AsyncGenerator
 
 # from app.action import get_user_by_email
-from app.agent import build_graph, embeddings, EMBEDDING_DIMS, generate_title_for_chat, my_agent
+from app.agent import build_graph, embeddings, EMBEDDING_DIMS, generate_title_for_chat, get_chat_state, my_agent
 from app.db import get_async_session
 from app.schema import SaveUserPayload, UserResponse
 from contextlib import asynccontextmanager
@@ -121,7 +121,7 @@ app.add_middleware(
 async def return_jwt():
     return {"message": "Hello World"}
 
-@app.get("/health")
+@app.get("/health",status_code=status.HTTP_200_OK)
 async def health(session: AsyncSession = Depends(get_async_session)):
    user = await session.execute(text('SELECT * FROM "user"'))
    result = user.fetchall()
@@ -130,7 +130,7 @@ async def health(session: AsyncSession = Depends(get_async_session)):
    result_dict = [dict(row._mapping) for row in result]
    return {"status": "ok", "user": result_dict}
 
-@app.post("/chat")
+@app.post("/chat",status_code=status.HTTP_200_OK)
 async def chat(payload:ChatPayload):
 
     user_input: str = payload.message
@@ -149,11 +149,23 @@ async def chat(payload:ChatPayload):
 
     return StreamingResponse(stream_generator(), media_type="text/event-stream")
 
-@app.post("/generate-chat-title")
+@app.post("/generate-chat-title",status_code=status.HTTP_200_OK)
 async def generate_chat_title(payload:GenerateChatTitlePayload):
     conversation: str = payload.conversation
     title = await generate_title_for_chat(conversation)
     return {"title": title}
+
+@app.get("/get-thread-messages/{thread_id}",status_code=status.HTTP_200_OK)
+async def getThreadMessages(thread_id: str,request:Request):
+    workflow = request.app.state.workflow
+    state = await get_chat_state(workflow=workflow, thread_id=thread_id)
+    if state is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Thread not found",
+        )
+    return state
+
 
 # @app.post("/chat")
 # async def chat(request: Request, jwt: dict = Depends(JWT)):
