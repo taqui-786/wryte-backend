@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from typing import AsyncGenerator
 
 from dotenv import load_dotenv
-from langchain_core.messages import HumanMessage, messages_to_dict
+from langchain_core.messages import AIMessageChunk, HumanMessage, ToolMessage, messages_to_dict
 from langchain_core.tools import tool
 from langchain_nvidia_ai_endpoints import ChatNVIDIA, NVIDIAEmbeddings
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
@@ -185,6 +185,7 @@ def build_graph(
     builder.add_edge(START, "chat_node")
     builder.add_conditional_edges("chat_node", tools_condition)
     builder.add_edge("tools","chat_node")
+    builder.add_edge("chat_node",END)
 
     return builder.compile(
         checkpointer=checkpointer,
@@ -223,15 +224,21 @@ async def my_agent(
             message_chunk, _metadata = chunk["data"]
             # Only yield if there is actual content
             if message_chunk:
-                yield {
-                    "content": message_chunk.content,
-                    "reasoning": message_chunk.additional_kwargs.get(
-                        "reasoning_content",
-                        "",
-                    ),
-                    "tool-calls": getattr(message_chunk, "tool_calls", []) or [],
-                }
-
+                yield message_chunk.model_dump()
+            # if isinstance(message_chunk,AIMessageChunk):
+            #     yield {
+            #         "content": message_chunk.content,
+            #         "reasoning": message_chunk.additional_kwargs.get(
+            #             "reasoning_content",
+            #             "",
+            #         ),
+            #         "tool-calls": getattr(message_chunk, "tool_calls", []) or [],
+            #     }
+            # elif isinstance(message_chunk,ToolMessage):
+            #     yield {
+            #         "content": message_chunk.content,
+            #         "name": message_chunk.name,
+            #     }
 
 async def get_chat_state(
     workflow: CompiledStateGraph,
