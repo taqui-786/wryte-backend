@@ -1,4 +1,3 @@
-from app.agent import my_agent
 import uvicorn
 
 

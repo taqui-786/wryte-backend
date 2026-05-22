@@ -1,35 +1,11 @@
-
-
-
-from sqlalchemy import text
-# from app.agent import generate_title_for_chat
-# from app.action import add_new_thread
-# from app.schema import CreateThreadPayload
-# from app.action import get_document_by_id
-# from app.action import get_all_documents
-# from app.action import create_new_document
-# from app.action import get_user_id_by_email
-from app.schema import ChatPayload, CreateDocumentPayload, GenerateChatTitlePayload
-
-from typing import Annotated, AsyncGenerator
-
-# from app.action import get_user_by_email
-from app.agent import build_graph, embeddings, EMBEDDING_DIMS, generate_title_for_chat, get_chat_state, my_agent
-from app.db import get_async_session
-from app.schema import SaveUserPayload, UserResponse
+from app.agent import build_graph, embeddings, EMBEDDING_DIMS
 from contextlib import asynccontextmanager
-from dotenv import load_dotenv
-from fastapi import Depends, FastAPI, HTTPException, Request, status
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, StreamingResponse
-from fastapi_nextauth_jwt import NextAuthJWTv4,NextAuthJWT
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from langgraph.store.postgres.aio import AsyncPostgresStore
-from sqlalchemy.ext.asyncio import AsyncSession
-import json
-import os
 
-load_dotenv()
+from app.config import settings
 
 
 def _psycopg_uri(url: str) -> str:
@@ -51,31 +27,29 @@ def _psycopg_uri(url: str) -> str:
     if "?ssl=require" in url:
         url = url.replace("?ssl=require", "?sslmode=require")
     elif url.endswith("?ssl") or "&ssl" in url:
-        url = url.replace("?ssl", "?sslmode=require").replace("&ssl", "&sslmode=require")
+        url = url.replace("?ssl", "?sslmode=require").replace(
+            "&ssl", "&sslmode=require"
+        )
 
     return url
 
 
-DB_URI = _psycopg_uri(os.environ["DATABASE_URL"])
+DB_URI = _psycopg_uri(settings.DATABASE_URL)
 
 
 # ---------------------------------------------------------------------------
 # Lifespan — sets up store, checkpointer and compiled graph
 # ---------------------------------------------------------------------------
 
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Create application DB tables (SQLAlchemy models)
-    # await create_db_and_tables()
 
     async with (
-        # index= tells LangGraph to embed every memory on write and use
-        # cosine-similarity when asearch() is called (semantic search).
-        # dims must match the output of your embedding model (1044 here).
         AsyncPostgresStore.from_conn_string(
             DB_URI,
             index={
-                "embed": embeddings,   # NVIDIAEmbeddings instance from agent.py
+                "embed": embeddings,  # NVIDIAEmbeddings instance from agent.py
                 "dims": EMBEDDING_DIMS,  # 1024 — must match the model
             },
         ) as store,
@@ -92,126 +66,15 @@ async def lifespan(app: FastAPI):
         # Context managers clean up connections on exit
 
 
-# --------------------------------------------------------------------------- 
+# ---------------------------------------------------------------------------
 # App & middleware
 # ---------------------------------------------------------------------------
 
-app = FastAPI(lifespan=lifespan)
-ALLOWED_ORIGINS = [
-    "http://localhost:3000",
-    "https://wryte-ti.vercel.app",
-]
+app = FastAPI(lifespan=lifespan,title=settings.PROJECT_NAME,version=settings.VERSION)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=ALLOWED_ORIGINS,
+    allow_origins=settings.CORE_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-
-
-
-
-# ---------------------------------------------------------------------------
-# Routes
-# ---------------------------------------------------------------------------
-
-@app.get("/")
-async def return_jwt():
-    return {"message": "Hello World"}
-
-@app.get("/health",status_code=status.HTTP_200_OK)
-async def health(session: AsyncSession = Depends(get_async_session)):
-   user = await session.execute(text('SELECT * FROM "user"'))
-   result = user.fetchall()
-   print('res - ',result)
-   # Convert Row objects to dictionaries for JSON serialization
-   result_dict = [dict(row._mapping) for row in result]
-   return {"status": "ok", "user": result_dict}
-
-@app.post("/chat",status_code=status.HTTP_200_OK)
-async def chat(payload:ChatPayload):
-
-    user_input: str = payload.message
-    thread_id: str = payload.thread_id
-    user_id: str = payload.user_id
-    workflow = app.state.workflow
-    async def stream_generator() -> AsyncGenerator[str, None]:
-        async for chunk in my_agent(
-            workflow=workflow,
-            user_input=user_input,
-            thread_id=thread_id,
-            user_id=user_id,
-        ):
-            yield f"data: {json.dumps(chunk)}\n\n"
-        yield "data: DONE\n\n"
-
-    return StreamingResponse(stream_generator(), media_type="text/event-stream")
-
-@app.post("/generate-chat-title",status_code=status.HTTP_200_OK)
-async def generate_chat_title(payload:GenerateChatTitlePayload):
-    conversation: str = payload.conversation
-    title = await generate_title_for_chat(conversation)
-    return {"title": title}
-
-@app.get("/get-thread-messages/{thread_id}",status_code=status.HTTP_200_OK)
-async def getThreadMessages(thread_id: str,request:Request):
-    workflow = request.app.state.workflow
-    state = await get_chat_state(workflow=workflow, thread_id=thread_id)
-    if state is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Thread not found",
-        )
-    return state
-
-
-# @app.post("/chat")
-# async def chat(request: Request, jwt: dict = Depends(JWT)):
-#     """
-#     Stream agent responses token-by-token.
-
-#     Expects JSON body:
-#         { "message": "...", "thread_id": "..." }
-
-#     The user_id is taken from the JWT so memories are always scoped
-#     to the authenticated user — no client-supplied user_id is trusted.
-#     """
-#     body = await request.json()
-#     user_input: str = body.get("message", "")
-#     thread_id: str = body.get("thread_id", "default")
-#     # JWT sub is the canonical user identifier
-#     user_id: str = jwt.get("email") or "anonymous"
-
-    # workflow = request.app.state.workflow
-
-    # async def stream_generator() -> AsyncGenerator[str, None]:
-    #     async for chunk in my_agent(
-    #         workflow=workflow,
-    #         user_input=user_input,
-    #         thread_id=thread_id,
-    #         user_id=user_id,
-    #     ):
-    #         yield f"data: {json.dumps(chunk)}\n\n"
-    #     yield "data: DONE\n\n"
-
-    # return StreamingResponse(stream_generator(), media_type="text/event-stream")
-
-
-# @app.get("/get-state/{thread_id}", status_code=status.HTTP_200_OK)
-# async def get_state(
-#     thread_id: str,
-#     request: Request,
-#     jwt: dict = Depends(JWT),
-# ):
-#     # print(jwt.get("email"))
-#     workflow = request.app.state.workflow
-#     state = await get_chat_state(workflow=workflow, thread_id=thread_id)
-#     if state is None:
-#         raise HTTPException(
-#             status_code=status.HTTP_404_NOT_FOUND,
-#             detail="Thread not found",
-#         )
-#     return state
-
