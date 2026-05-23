@@ -21,7 +21,7 @@ async def my_agent(
         version="v2",
     ):
         if chunk.get("type") == "messages":
-            print(f"[my_agent] chunk: {chunk}")
+            # print(f"[my_agent] chunk: {chunk}")
             message_chunk, _metadata = chunk["data"]
             if message_chunk:
                 yield message_chunk.model_dump()
