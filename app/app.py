@@ -1,4 +1,3 @@
-from app.agent import build_graph, embeddings, EMBEDDING_DIMS
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -6,6 +5,9 @@ from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from langgraph.store.postgres.aio import AsyncPostgresStore
 
 from app.config import settings
+from app.routes import router
+from app.workflow.graph import build_graph
+from app.workflow.tool import EMBEDDING_DIMS, embeddings
 
 
 def _psycopg_uri(url: str) -> str:
@@ -49,7 +51,7 @@ async def lifespan(app: FastAPI):
         AsyncPostgresStore.from_conn_string(
             DB_URI,
             index={
-                "embed": embeddings,  # NVIDIAEmbeddings instance from agent.py
+                "embed": embeddings,  # NVIDIAEmbeddings instance
                 "dims": EMBEDDING_DIMS,  # 1024 — must match the model
             },
         ) as store,
@@ -73,8 +75,11 @@ async def lifespan(app: FastAPI):
 app = FastAPI(lifespan=lifespan,title=settings.PROJECT_NAME,version=settings.VERSION)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.CORE_ORIGINS,
+    allow_origins=settings.CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.include_router(router=router, prefix=settings.API_V1_STR)
+

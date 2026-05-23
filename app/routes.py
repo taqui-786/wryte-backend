@@ -1,8 +1,9 @@
 from collections.abc import AsyncGenerator
 from fastapi import APIRouter, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
-from app.chat import ChatService, TitleService
+from app.services.chat import ChatService
 from app.schema import ChatPayload, GenerateChatTitlePayload
+from app.services.title import TitleService
 
 
 
@@ -18,7 +19,7 @@ async def return_jwt():
 @router.post("/chat",status_code=status.HTTP_200_OK)
 async def chat(payload:ChatPayload, request:Request):
     workflow = request.app.state.workflow
-    service = ChatService(workflow=workflow)
+    service = ChatService(workflow=workflow,)
     
     return StreamingResponse(service.stream(payload.message, payload.thread_id, payload.user_id), media_type="text/event-stream")
 
@@ -39,4 +40,5 @@ async def getThreadMessages(thread_id: str,request:Request):
             detail="Thread not found",
         )
     return state
+
 

@@ -580,20 +580,6 @@ wheels = [
 ]
 
 [[package]]
-name = "fastapi-nextauth-jwt"
-version = "2.1.1"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "cryptography" },
-    { name = "fastapi" },
-    { name = "python-jose", extra = ["cryptography"] },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/b1/e3/f569b861a78c92c1ba1a8abb450db757feb2d1e0f499cc44a558492ce473/fastapi_nextauth_jwt-2.1.1.tar.gz", hash = "sha256:97d24df96661c78a4c7003f78459cc6df36eccd77656a3067628cace34863754", size = 69830, upload-time = "2025-05-24T11:39:23.928Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/02/0f/77402cfd8791af1bd7ff8fcadf8b56c13aa83253201a5e3157b13c6d0faa/fastapi_nextauth_jwt-2.1.1-py2.py3-none-any.whl", hash = "sha256:2beb72fa7124e857c79204c4828ed50e783933f8a7c0bf51ac65f20806dc44df", size = 8669, upload-time = "2025-05-24T11:39:22.306Z" },
-]
-
-[[package]]
 name = "fastapi-users"
 version = "15.0.5"
 source = { registry = "https://pypi.org/simple" }
@@ -2114,7 +2100,6 @@ dependencies = [
     { name = "alembic" },
     { name = "asyncpg" },
     { name = "fastapi" },
-    { name = "fastapi-nextauth-jwt" },
     { name = "fastapi-users", extra = ["sqlalchemy"] },
     { name = "httpx" },
     { name = "langchain" },
@@ -2139,7 +2124,6 @@ requires-dist = [
     { name = "alembic", specifier = ">=1.18.4" },
     { name = "asyncpg", specifier = ">=0.31.0" },
     { name = "fastapi", specifier = ">=0.136.1" },
-    { name = "fastapi-nextauth-jwt", specifier = ">=2.1.1" },
     { name = "fastapi-users", extras = ["sqlalchemy"], specifier = ">=15.0.5" },
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "langchain", specifier = ">=1.2.17" },

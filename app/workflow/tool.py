@@ -1,7 +1,6 @@
 from langchain_core.tools import tool
 from langchain_nvidia_ai_endpoints import ChatNVIDIA, NVIDIAEmbeddings
-from langchain_core.output_parsers import StrOutputParser
-from langchain_core.prompts import ChatPromptTemplate
+
 from langgraph.prebuilt import ToolNode
 from tinyfish import TinyFish
 
@@ -57,32 +56,4 @@ llm_with_tool = llm.bind_tools(my_tools)
 tool_node = ToolNode(my_tools)
 
 
-async def generate_title_for_chat(conversation: str) -> str:
-    prompt = ChatPromptTemplate.from_template(
-        """
-You are an AI assistant that generates concise chat titles for a writing editor application.
 
-Your task is to create a short, natural, and meaningful title based on:
-1. The user's first message
-2. The assistant's initial response
-
-The title should summarize the main intent or topic of the conversation, similar to how ChatGPT names chats.
-
-Rules:
-- Maximum 5 words
-- Clear and human-friendly
-- Do not use quotes
-- Avoid generic titles like "New Chat" or "Conversation"
-- Avoid unnecessary filler words
-- Return only the title
-
-Conversation:
-{conversation}
-
-Title:
-"""
-    )
-    output_parser = StrOutputParser()
-    chain = prompt | llm_secondary | output_parser
-    response = await chain.ainvoke({"conversation": conversation})
-    return response

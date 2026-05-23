@@ -9,12 +9,10 @@ class Settings(BaseSettings):
     API_V1_STR: str = "/api/v1"
 
     DATABASE_URL: str
-    NEXTAUTH_SECRET: str 
     NVIDIA_API_KEY: str 
-    AUTH_URL: str
     TINYFISH_API_KEY: str
 
-    CORE_ORIGINS: list[str]=[
+    CORS_ORIGINS: list[str]=[
         "http://localhost:3000",
         "https://wryte-ti.vercel.app",
     ]
