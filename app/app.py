@@ -3,6 +3,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from langgraph.store.postgres.aio import AsyncPostgresStore
+from psycopg_pool import AsyncConnectionPool
 
 from app.config import settings
 from app.routes import router
@@ -18,14 +19,12 @@ def _psycopg_uri(url: str) -> str:
       1. Strips dialect+driver prefix, e.g. "postgresql+asyncpg://" → "postgresql://"
       2. Normalises the SSL param, e.g. "?ssl=require" → "?sslmode=require"
     """
-    # 1. Strip driver suffix from scheme (e.g. "+asyncpg", "+psycopg2")
     if "://" in url:
         scheme, rest = url.split("://", 1)
         if "+" in scheme:
             scheme = scheme.split("+")[0]
         url = f"{scheme}://{rest}"
 
-    # 2. Replace bare ?ssl / ?ssl=require with ?sslmode=require
     if "?ssl=require" in url:
         url = url.replace("?ssl=require", "?sslmode=require")
     elif url.endswith("?ssl") or "&ssl" in url:
@@ -38,6 +37,13 @@ def _psycopg_uri(url: str) -> str:
 
 DB_URI = _psycopg_uri(settings.DATABASE_URL)
 
+_POOL_CONFIG = {
+    "min_size": 2,
+    "max_size": 10,
+    "max_idle": 120,
+    "max_lifetime": 1800,
+}
+
 
 # ---------------------------------------------------------------------------
 # Lifespan — sets up store, checkpointer and compiled graph
@@ -47,25 +53,27 @@ DB_URI = _psycopg_uri(settings.DATABASE_URL)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
 
+    pool = AsyncConnectionPool(DB_URI, **_POOL_CONFIG)
+
     async with (
+        pool,
         AsyncPostgresStore.from_conn_string(
             DB_URI,
+            pool_config={**_POOL_CONFIG},
             index={
-                "embed": embeddings,  # NVIDIAEmbeddings instance
-                "dims": EMBEDDING_DIMS,  # 1024 — must match the model
+                "embed": embeddings,
+                "dims": EMBEDDING_DIMS,
             },
         ) as store,
-        AsyncPostgresSaver.from_conn_string(DB_URI) as checkpointer,
     ):
-        # Idempotent — creates tables if they don't exist yet.
-        # The store.setup() also creates the vector-index column in Postgres.
+        checkpointer = AsyncPostgresSaver(conn=pool)
+
         await store.setup()
         await checkpointer.setup()
 
         app.state.workflow = build_graph(checkpointer=checkpointer, store=store)
 
         yield
-        # Context managers clean up connections on exit
 
 
 # ---------------------------------------------------------------------------
