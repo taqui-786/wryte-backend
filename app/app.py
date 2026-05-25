@@ -3,6 +3,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from langgraph.store.postgres.aio import AsyncPostgresStore
+from psycopg.rows import dict_row
 from psycopg_pool import AsyncConnectionPool
 
 from app.config import settings
@@ -42,6 +43,12 @@ _POOL_CONFIG = {
     "max_size": 10,
     "max_idle": 120,
     "max_lifetime": 1800,
+    "check": AsyncConnectionPool.check_connection,
+    "kwargs": {
+        "autocommit": True,
+        "prepare_threshold": 0,
+        "row_factory": dict_row,
+    },
 }
 
 
