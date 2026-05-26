@@ -29,7 +29,8 @@ def search_agent(query: str) -> list:
 my_tools = [multiply, search_agent]
 
 llm = ChatNVIDIA(
-    model="nvidia/nemotron-3-super-120b-a12b",
+    # model="nvidia/nemotron-3-super-120b-a12b",
+    model="stepfun-ai/step-3.5-flash",
     api_key=settings.NVIDIA_API_KEY,
     temperature=1,
     top_p=0.95,
