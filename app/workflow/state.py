@@ -6,6 +6,10 @@ from langgraph.graph.message import add_messages
 
 class ChatState(TypedDict):
     messages: Annotated[list[BaseModel], add_messages]
+    memories:list[str]
+    should_remember:bool
+    memory_to_save:str | None
+    editor_content: str
 
 
 @dataclass

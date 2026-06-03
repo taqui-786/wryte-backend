@@ -9,22 +9,28 @@ async def my_agent(
     user_input: str,
     thread_id: str,
     user_id: str,
+    editor_content: str = "",
 ) -> AsyncGenerator[str, None]:
     config = {"configurable": {"thread_id": thread_id}}
     context = UserContext(user_id=user_id)
 
     async for chunk in workflow.astream(
-        {"messages": [HumanMessage(content=user_input)]},
+        {
+            "messages": [HumanMessage(content=user_input)],
+            "editor_content": editor_content,
+        },
         config=config,
         stream_mode="messages",
         context=context,
         version="v2",
     ):
-        if chunk.get("type") == "messages":
-            # print(f"[my_agent] chunk: {chunk}")
-            message_chunk, _metadata = chunk["data"]
-            if message_chunk:
-                yield message_chunk.model_dump()
+        if chunk.get("type") != "messages":
+            continue
+        message_chunk, metadata = chunk["data"]
+        if metadata.get("langgraph_node") != "chat_node":
+            continue
+        if message_chunk:
+            yield message_chunk.model_dump()
 
 
 async def get_chat_state(workflow: CompiledStateGraph, thread_id: str):

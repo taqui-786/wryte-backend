@@ -20,8 +20,15 @@ async def return_jwt():
 async def chat(payload:ChatPayload, request:Request):
     workflow = request.app.state.workflow
     service = ChatService(workflow=workflow,)
-    
-    return StreamingResponse(service.stream(payload.message, payload.thread_id, payload.user_id), media_type="text/event-stream")
+    return StreamingResponse(
+        service.stream(
+            payload.message,
+            payload.thread_id,
+            payload.user_id,
+            payload.editor_content,
+        ),
+        media_type="text/event-stream",
+    )
 
 @router.post("/generate-chat-title",status_code=status.HTTP_200_OK)
 async def generate_chat_title(payload:GenerateChatTitlePayload):

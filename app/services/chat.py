@@ -11,12 +11,19 @@ class ChatService:
     def __init__(self, workflow:CompiledStateGraph):
         self.workflow = workflow
         
-    async def stream(self, user_input: str, thread_id: str, user_id: str) -> AsyncGenerator[str, None]:
+    async def stream(
+        self,
+        user_input: str,
+        thread_id: str,
+        user_id: str,
+        editor_content: str = "",
+    ) -> AsyncGenerator[str, None]:
         async for chunk in my_agent(
             workflow=self.workflow,
             user_input=user_input,
             thread_id=thread_id,
             user_id=user_id,
+            editor_content=editor_content,
         ):
             yield f"data: {dumps(chunk)}\n\n"
         yield "data: [DONE]\n\n"
