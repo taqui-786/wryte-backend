@@ -1,14 +1,51 @@
-from typing import Annotated
-from langchain_core.tools import tool
+from typing import Annotated, Any
+from langchain_core.messages import ToolMessage
+from langchain_core.tools import InjectedToolCallId, tool
 from langchain_nvidia_ai_endpoints import ChatNVIDIA, NVIDIAEmbeddings
 from langgraph.prebuilt import ToolNode, InjectedState
+from langgraph.types import Command
+from pydantic import BaseModel, ConfigDict, Field
 from tinyfish import TinyFish
 
 from app.config import settings
-from app.workflow.state import ChatState
 
 
 client = TinyFish(api_key=settings.TINYFISH_API_KEY)
+
+
+class ReadEditorInput(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    state: Annotated[dict[str, Any], InjectedState()] | None = Field(
+        default=None,
+        description="Injected graph state. Not provided by the model.",
+    )
+
+
+MARKDOWN_RULES = """\
+Markdown formatting rules the editor understands:
+
+INLINE
+- Bold: **text** or __text__
+- Italic: *text* or _text_
+- Underline: <u>text</u>
+- Strikethrough: ~~text~~
+- Inline code: `text`
+- Link: [text](url)
+
+BLOCK
+- Headings: # H1, ## H2, ### H3, #### H4, ##### H5, ###### H6
+- Blockquote: > text
+- Ordered list: 1. item, 2. item
+- Bullet list: - item, * item, or + item
+- Code block: ```language\\ncode\\n```
+- Horizontal rule: ---, ***, or ___
+- Image: ![alt](url)
+
+NOTES
+- Bold (**) takes precedence over italic (*) when both could match.
+- Use a backslash (\\) to escape special characters when needed.
+"""
 
 
 @tool
@@ -17,21 +54,53 @@ def multiply(a: int, b: int) -> int:
     return a * b
 
 
-@tool
+@tool(args_schema=ReadEditorInput)
 def read_editor(
-    state: Annotated[ChatState, InjectedState],
+    state: Annotated[dict[str, Any], InjectedState],
 ) -> str:
     """Read the full current content of the user's markdown editor.
-
     Use this whenever you need to see what the user is currently writing
     before you can help them (summarize, edit, review, continue, etc.).
     Returns the editor content as a single markdown string. If the editor
     is empty, returns an empty string.
     """
     content = state.get("editor_content", "") or ""
+    print("Editor content:", content)
     if not content.strip():
         return "The editor is currently empty."
     return content
+
+
+@tool
+def write_editor(
+    content: str,
+    tool_call_id: Annotated[str, InjectedToolCallId] = "",
+) -> Command:
+    """Write markdown content to the user's editor, REPLACING the existing
+    content. Use this when the user asks you to write, draft, update, fix,
+    or replace what is in their editor.
+
+    The `content` argument MUST be valid markdown using the supported syntax:
+
+    - Inline: **bold**, *italic*, ~~strike~~, `inline code`, [link](url),
+      <u>underline</u>
+    - Block: # Heading, > blockquote, - bullet, 1. ordered,
+      ```code block```, --- horizontal rule, ![alt](image-url)
+
+    Always pass the FULL new content for the editor. If you need to preserve
+    the current content, call `read_editor` first and include the existing
+    text in `content` as appropriate.
+    """
+    confirmation = f"Wrote {len(content)} characters to the editor."
+
+    return Command(
+        update={
+            "editor_content": content,
+            "messages": [
+                ToolMessage(confirmation, tool_call_id=tool_call_id),
+            ],
+        }
+    )
 
 
 @tool
@@ -44,10 +113,9 @@ def search_agent(query: str) -> list:
     return pages.results
 
 
-my_tools = [multiply, search_agent, read_editor]
+my_tools = [multiply, search_agent, read_editor, write_editor]
 
 llm = ChatNVIDIA(
-    # model="nvidia/nemotron-3-super-120b-a12b",
     model="stepfun-ai/step-3.5-flash",
     api_key=settings.NVIDIA_API_KEY,
     temperature=1,
@@ -89,4 +157,13 @@ llm_with_tool = llm.bind_tools(my_tools)
 tool_node = ToolNode(my_tools)
 
 
+class RememberDecision(BaseModel):
+    """The classifier's answer. Forces a clean yes/no + reason."""
+    should_remember: bool = Field(
+        description="True if the user is sharing a fact, preference, or instruction to remember"
+    )
+    reason: str = Field(
+        description="One short sentence explaining why"
+    )
 
+llm_classifier_remeber_structured = llm_classifier.with_structured_output(RememberDecision)

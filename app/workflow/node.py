@@ -4,7 +4,13 @@ from langchain_core.messages import SystemMessage
 from langgraph.runtime import Runtime
 from pydantic import BaseModel
 from app.workflow.state import ChatState, UserContext
-from app.workflow.tool import llm_classifier, llm_extractor, llm_with_tool
+from app.workflow.tool import (
+    MARKDOWN_RULES,
+    RememberDecision,
+    llm_classifier_remeber_structured,
+    llm_extractor,
+    llm_with_tool,
+)
 
 
 # Classifier Node - Just to determine the msg need to be saved Yes / No
@@ -18,20 +24,19 @@ async def classify_node(state: ChatState, runtime: Runtime[UserContext]):
     last_content = (
         last_message.content if hasattr(last_message, "content") else str(last_message)
     )
-    prompt = (
-        "Look at this user message and decide if it contains a fact worth "
-        "remembering about the user for future conversations. Examples of "
-        "worth-remembering: their name, job, preferences,website, ongoing projects, "
-        "writing style, opinions. Examples of NOT worth remembering: "
-        "questions, requests for help, chitchat. if that question doest not contain any personal user stuff\n\n"
-        f'Message: "{last_content}"\n\n'
-        "Return should_remember=True only if there's a clear, persistent fact."
+    
+    if len(last_content) < 5:
+        return {"should_remember": False}
+    decision: RememberDecision = await llm_classifier_remeber_structured.ainvoke(
+        f"Does this message contain personal information about the user worth remembering?\n\n"
+        f"YES if the user reveals ANYTHING about themselves - facts, projects, work, "
+        f"possessions, preferences, habits, life details, or instructions. "
+        f"Even if it's casual or followed by a question (e.g. 'I built my portfolio at X, thoughts?' "
+        f"contains 'portfolio at X' → YES).\n"
+        f"NO for pure questions, greetings, chitchat, or statements about others.\n\n"
+        f'User message: "{last_content}"'
     )
-    classifier = llm_classifier.with_structured_output(MemoryDecision)
-    decision: MemoryDecision = await classifier.ainvoke(
-        [{"role": "user", "content": prompt}]
-    )
-    print("Decision: ", decision)
+    print(decision.should_remember)
     return {"should_remember": decision.should_remember}
 
 
@@ -66,12 +71,23 @@ then reply with your final content. You have access to tools that can
 help you with certain tasks. Use them when needed.
 
 EDITOR TOOLS:
-- Use the `read_editor` tool whenever the user asks you to do something
-  with what they are currently writing (summarize, edit, continue, review,
-  fix, count words, find typos, etc.) and you have not already been shown
-  the full content. The tool returns the entire current editor content.
+- Use the `read_editor` tool whenever you need to see what the user is
+  currently writing before you can help them (summarize, edit, continue,
+  review, fix, count words, find typos, etc.). It returns the entire
+  current editor content.
+- Use the `write_editor` tool to write or replace content in the editor.
+  The `content` argument REPLACES the current editor content entirely, so
+  if you need to preserve existing text, call `read_editor` first and
+  include the existing content in the new value.
 - Do not invent or guess editor content. If you are unsure, call
   `read_editor` first.
+
+EDITOR MARKDOWN RULES (the editor only supports the syntax listed below):
+{MARKDOWN_RULES}
+
+Always produce content that conforms to these rules. When you write to the
+editor, the `content` you pass to `write_editor` MUST be a single
+well-formed markdown string using only the inline and block forms above.
 """
 
 
@@ -83,24 +99,34 @@ async def chat_node(state: ChatState, runtime: Runtime[UserContext]):
     else:
         memory_context = "No memories yet."
 
-    system_prompt = SYSTEM_PROMPT_TEMPLATE.format(memory_context=memory_context)
+    system_prompt = SYSTEM_PROMPT_TEMPLATE.format(memory_context=memory_context,MARKDOWN_RULES=MARKDOWN_RULES)
     response = await llm_with_tool.ainvoke(
         [SystemMessage(content=system_prompt)] + list(state["messages"])
     )
     return {"messages": [response]}
 
 
+async def remember_node(state: ChatState, runtime: Runtime[UserContext]):
+    if not state.get("should_remember"):
+        return {}
+
+    # We "schedule" the slow work and return immediately.
+    # The user gets their "DONE" signal NOW.
+    # The memory saves in the background.
+    asyncio.create_task(extract_and_save_node(state, runtime))
+    return {}
+
+
 # Extractor Node - Extract memories from user input
 async def extract_and_save_node(state: ChatState, runtime: Runtime[UserContext]):
     if not state.get("should_remember"):
-        return {"should_remember": False, "memory_to_save": None}
+        return {"should_remember": False}
 
     last_message = state["messages"][-2]
     last_content = (
         last_message.content if hasattr(last_message, "content") else str(last_message)
     )
-    user_id = runtime.context.user_id
-    memory_namespace = ("memories", user_id)
+    memory_namespace = ("memories", runtime.context.user_id)
     extraction_prompt = (
         f'User message: "{last_content}"\n\n'
         "Extract ONLY stable facts about the USER that may be useful in future conversations. "
@@ -113,14 +139,14 @@ async def extract_and_save_node(state: ChatState, runtime: Runtime[UserContext])
     )
     memory_text = extraction.content.strip()
     if not memory_text:
-        return {"should_remember": False, "memory_to_save": None}
+        return {"should_remember": False}
 
     if memory_text.upper() == "NONE":
-        return {"should_remember": False, "memory_to_save": None}
+        return {"should_remember": False}
 
     # Defensive: if the LLM just echoed the user's message back, don't save it
     if memory_text.lower() == last_content.lower():
-        return {"should_remember": False, "memory_to_save": None}
+        return {"should_remember": False}
 
     if memory_text and memory_text.upper() != "NONE":
         await runtime.store.aput(
@@ -128,42 +154,7 @@ async def extract_and_save_node(state: ChatState, runtime: Runtime[UserContext])
             str(uuid.uuid4()),
             {"data": memory_text},
         )
-    return {"should_remember": False, "memory_to_save": memory_text}
+    return {"should_remember": False}
 
 
 # Extraction [Helper]
-
-
-async def schedule_memory_save(workflow, state, config, context):
-    """
-    Spawns a background task that re-runs the graph for the extract step only.
-    The user has already seen the response by the time this kicks in.
-    """
-    # We use `astream` with `interrupt_before` to run ONLY the extract step.
-    # Actually, a simpler approach: just run the extraction function directly.
-
-    # Easiest version: do it inline with asyncio.create_task
-    # We pass the runtime context manually because we're outside the graph.
-    async def _background_save():
-        try:
-            from langgraph.graph import StateGraph
-
-            # Just call the extractor directly with a minimal state
-            minimal_state = {
-                "messages": state["messages"],
-                "memories": [],
-                "should_remember": state.get("should_remember", False),
-                "memory_to_save": None,
-            }
-
-            # Build a tiny runtime-like object
-            class _MiniRuntime:
-                def __init__(self, ctx):
-                    self.context = ctx
-
-            await extract_and_save_node(minimal_state, _MiniRuntime(context))
-        except Exception as e:
-            # Never let a background failure crash anything
-            print(f"[background memory save] failed: {e}")
-
-    asyncio.create_task(_background_save())

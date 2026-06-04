@@ -27,7 +27,7 @@ async def my_agent(
         if chunk.get("type") != "messages":
             continue
         message_chunk, metadata = chunk["data"]
-        if metadata.get("langgraph_node") != "chat_node":
+        if metadata.get("langgraph_node") not in ["chat_node", "tools"]:
             continue
         if message_chunk:
             yield message_chunk.model_dump()
