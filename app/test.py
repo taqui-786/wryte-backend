@@ -1,27 +1,24 @@
+import json
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate
 import os
 from dotenv import load_dotenv
-from langchain_nvidia_ai_endpoints import ChatNVIDIA,NVIDIAEmbeddings
+from langchain_nvidia_ai_endpoints import ChatNVIDIA, NVIDIAEmbeddings
 from langchain_core.messages import HumanMessage
 from langgraph.graph import StateGraph, START
 from langgraph.graph.message import add_messages
 from typing import TypedDict, Annotated
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), "..", ".env"))
 
 # ── LLM ──────────────────────────────────────────────────────────────────────
 llm = ChatNVIDIA(
-    # model="z-ai/glm-5.1",
-    model="qwen/qwen3.5-122b-a10b",
-    api_key=os.getenv("NVIDIA_API_KEY`"),
+    model="nvidia/llama-3.3-nemotron-super-49b-v1",
+    api_key=os.getenv("NVIDIA_API_KEY"),
     temperature=1,
     top_p=0.95,
     max_completion_tokens=1024,
-    model_kwargs={
-        "enable_thinking": True,
-    },
 )
 
 
@@ -54,51 +51,90 @@ graph = (
 # print("\n--- streaming end ---")
 
 
-def generate_title_for_chat(conversation: str):
-    try:
-        prompt = ChatPromptTemplate.from_template(
-            """
-You are an AI assistant that generates concise chat titles for a writing editor application.
+class OnlyHandyReasearchTopic(BaseModel):
+    urls: list[str] = Field(description="List of handy URLs from the data to research")
 
-Your task is to create a short, natural, and meaningful title based on:
-1. The user's first message
-2. The assistant's initial response
 
-The title should summarize the main intent or topic of the conversation, similar to how ChatGPT names chats.
+llm_OnlyHandyReasearchTopic = llm.with_structured_output(OnlyHandyReasearchTopic)
 
-Rules:
-- Maximum 5 words
-- Clear and human-friendly
-- Do not use quotes
-- Avoid generic titles like "New Chat" or "Conversation"
-- Avoid unnecessary filler words
-- Return only the title
 
-Conversation:
-{conversation}
+def testingStuff():
+    testing_data = [
+        {
+            "title": "Cockroach Janta Party (CJP): How Abhijeet Dipke's collective ... - BBC",
+            "snippet": "The Cockroach Janta Party has used AI-generated images to promote its cause online Indian politics has acquired an unusual mascot: the ...",
+            "url": "https://www.bbc.com/news/articles/cz72y11jjq1o",
+        },
+        {
+            "title": "Cockroach Janta Party - Wikipedia",
+            "snippet": "The Cockroach Janta Party (CJP; is an Indian satirical political movement founded on 16 May 2026 by Abhijeet Dipke, immediate national outrage",
+            "url": "https://en.wikipedia.org/wiki/Cockroach_Janta_Party",
+        },
+        {
+            "title": "Who Are Cockroach Janta Party's 3 Spokespersons? - YouTube",
+            "snippet": "CJP Press Conference: Cockroach Janta Party has announced three ... Go to channel DW News · India's 'Cockroach' movement tests its real-world ...",
+            "url": "https://www.youtube.com/watch?v=ZP9KuUWmSUA",
+        },
+        {
+            "title": "Cockroach Janta Party: Are You Qualified to Join CJP? - Instagram",
+            "snippet": "Today I will say congratulations to you. For people like you, a new political party has arrived in this country named the Cockroach Janta Party.",
+            "url": "https://www.instagram.com/reel/DYjr_qElLYM/?hl=en",
+        },
+        {
+            "title": "India's 'Cockroach' CJP party: What investors need to know - CNBC",
+            "snippet": "The CJP will face its first offline presence test on Saturday as it plans to hold a protest in New Delhi.",
+            "url": "https://www.cnbc.com/2026/06/04/indias-cockroach-cjp-party-what-investors-need-to-know.html",
+        },
+        {
+            "title": "Cockroach Janta Party Holds Protest At Delhi's Jantar Mantar | India ...",
+            "snippet": "CJP PROTEST LIVE: The Cockroach Janta Party (CJP) stages protest at Jantar Mantar in New Delhi, demanding the resignation of Union Education ...",
+            "url": "https://www.youtube.com/watch?v=0vVfrJJ-Yn0",
+        },
+        {
+            "title": "COCKROACH JANTA PARTY (CJP) : r/delhi - Reddit",
+            "snippet": "So yesterday i came across this post on X(twitter) about a new satirical movement or political party named the cockroach janta party.",
+            "url": "https://www.reddit.com/r/delhi/comments/1themuu/cockroach_janta_party_cjp/",
+        },
+        {
+            "title": 'Rapid rise of "Cockroach Janta Party" online protest movement ...',
+            "snippet": 'Rapid rise of "Cockroach Janta Party" online protest movement appears to spook India\'s leaders. By Arshad R. Zargar. May 22, 2026 / 12:47 PM EDT ...',
+            "url": "https://www.cbsnews.com/news/cockroach-janta-party-india-online-protest/",
+        },
+        {
+            "title": "CJP Website Taken Down Amid Crackdown - YouTube",
+            "snippet": "The official website of the viral Cockroach Janta Party has been taken offline amid a growing crackdown on the Gen Z-led movement.",
+            "url": "https://www.youtube.com/watch?v=ekon9eP7M2o",
+        },
+    ]
 
-Title:
+    user_content = f"""
+Topic:
+CJP (cockorage janta party)
+
+Search Results:
+{json.dumps(testing_data, indent=2)}
 """
-        )
-        output_parser = StrOutputParser()
-        chain = prompt | llm | output_parser
-        response =  chain.invoke({"conversation": conversation})
-        print("response----", response)
-        return response
-    except Exception as e:
-        print(e)
-        raise e
+    response: OnlyHandyReasearchTopic = llm_OnlyHandyReasearchTopic.invoke(
+        [
+            {
+                "role": "system",
+                "content": """You are a research URL selection agent.
 
-chat = """me - Hey how are you
-    Ai - i am fine what about y"""
-# generate_title_for_chat(chat)
-# embeddings = NVIDIAEmbeddings(model="nvidia/nv-embedqa-e5-v5",api_key=os.getenv("NVIDIA_API_KEY"))
-# print(embeddings.embed_query("Hello, how are you?"))
+Your task is to analyze search results and identify the most relevant URLs for the user's topic.
+Rules:
+- Focus on authoritative, useful, and information-rich sources.
+- Ignore low-quality, spammy, or irrelevant websites.
+- Return ONLY URLs and maximum only 3 urls.
+- Do not explain your choices.
+- Do not return titles.
+- Do not return snippets.
+- Do not use markdown.
+- Return one URL per line.""",
+            },
+            {"role": "user", "content": user_content},
+        ]
+    )
+    print(response.urls, len(response.urls))
 
-# print(llm.invoke('Hey there'))
 
-
-
-
-
-
+# testingStuff()

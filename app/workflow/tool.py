@@ -5,7 +5,7 @@ from langchain_nvidia_ai_endpoints import ChatNVIDIA, NVIDIAEmbeddings
 from langgraph.prebuilt import ToolNode, InjectedState
 from langgraph.types import Command
 from pydantic import BaseModel, ConfigDict, Field
-from tinyfish import TinyFish
+from tinyfish import TinyFish,AsyncTinyFish
 
 from app.config import settings
 
@@ -104,16 +104,30 @@ def write_editor(
 
 
 @tool
-def search_agent(query: str) -> list:
+async def search_agent(query: str) -> list:
     """Search the web for information. Always use this tool whenever you need
     current information or real-time data. Give a short query as input (max 400 tokens)."""
-    response = client.search.query(query=query, location="US")
+    response = await client.search.query(query=query, location="US")
     top_urls = [r.url for r in response.results[:3]]
-    pages = client.fetch.get_contents(urls=top_urls, format="markdown")
+    pages = await client.fetch.get_contents(urls=top_urls, format="markdown")
     return pages.results
 
+# In tool.py - replace deep_research tool
+@tool
+def deep_research(
+    topic: str,
+    tool_call_id: Annotated[str, InjectedToolCallId] = "",
+) -> Command:
+    """Trigger deep research on a topic. Use when user asks for comprehensive analysis."""
+    return Command(
+        update={
+            "topic": topic,  # Set the topic for research_topic_node
+            "research_requested": True,
+            "messages": [ToolMessage(f"Let me do a Deep research on: {topic}", tool_call_id=tool_call_id)]
+        },
+    )
 
-my_tools = [multiply, search_agent, read_editor, write_editor]
+my_tools = [multiply, search_agent, read_editor, write_editor, deep_research]
 
 llm = ChatNVIDIA(
     model="stepfun-ai/step-3.5-flash",
@@ -156,6 +170,7 @@ embeddings = NVIDIAEmbeddings(
 llm_with_tool = llm.bind_tools(my_tools)
 tool_node = ToolNode(my_tools)
 
+# Some shitty stuff ----
 
 class RememberDecision(BaseModel):
     """The classifier's answer. Forces a clean yes/no + reason."""
@@ -167,3 +182,22 @@ class RememberDecision(BaseModel):
     )
 
 llm_classifier_remeber_structured = llm_classifier.with_structured_output(RememberDecision)
+
+class OnlyHandyReasearchTopic(BaseModel):
+    urls:list[str]=Field(
+        description="List of handy URLs from the data to research"
+    )
+llm_OnlyHandyReasearchTopic = llm_classifier.with_structured_output(OnlyHandyReasearchTopic)
+
+class SummarizedPageContent(BaseModel):
+    summary:str=Field(
+        description="Summarized content of the site"
+    )
+llm_SummarizedPageContent = llm_classifier.with_structured_output(SummarizedPageContent)
+
+# In tool.py - modify ResearchTopic model
+class ResearchTopic(BaseModel):
+    topics: list[str] = Field(description="List of 2-4 research search queries")
+
+llm_ResearchTopic = llm_classifier.with_structured_output(ResearchTopic)
+
