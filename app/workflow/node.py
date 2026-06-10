@@ -10,14 +10,18 @@ from app.workflow.tool import (
     OnlyHandyReasearchTopic,
     RememberDecision,
     ResearchTopic,
+    StyleCheck,
     SummarizedPageContent,
+    WritingPlan,
     client,
     llm_OnlyHandyReasearchTopic,
     llm_ResearchTopic,
     llm_SummarizedPageContent,
+    llm_WriterPlan,
     llm_classifier_remeber_structured,
     llm_extractor,
     llm_secondary,
+    llm_style_check,
     llm_with_tool,
 )
 
@@ -184,25 +188,27 @@ Rules:
 - Return as a JSON list of strings: ["query1", "query2", "query3"]
 - Do not explain your reasoning.
 """
-  
-    response = await llm_secondary.ainvoke([  # Use raw LLM
-        {"role": "system", "content": SEARCH_QUERY_SYSTEM_PROMPT},
-        {"role": "user", "content": topic},
-    ])
-    
+
+    response = await llm_secondary.ainvoke(
+        [  # Use raw LLM
+            {"role": "system", "content": SEARCH_QUERY_SYSTEM_PROMPT},
+            {"role": "user", "content": topic},
+        ]
+    )
+
     try:
         queries = json.loads(response.content.strip())
         if not isinstance(queries, list):
             queries = [topic]  # Fallback
     except:
         queries = [topic]  # Fallback
-    
+
     # Ensure 2-4 queries
     queries = queries[:3]
     if len(queries) < 2:
         queries = [topic, f"{topic} overview", f"{topic} latest developments"][:4]
-    
-    return {"research_topics": queries} 
+
+    return {"research_topics": queries}
 
 
 async def research_node(state: ChatState, runtime: Runtime[UserContext]) -> dict:
@@ -309,15 +315,16 @@ Your output should prioritize information quality over length.
         print(f"Error in research_node for '{topic}': {e}")
         return {"research_results": [f"Research failed for {topic}: {str(e)}"]}
 
+
 async def finalize_research(state: ChatState) -> dict:
     all_summaries = state.get("research_results", [])
-    
+
     if not all_summaries:
         return {"final_research_report": "No research results to synthesize."}
-    
+
     # Combine all summaries into a structured report
     combined_content = "\n\n---\n\n".join(all_summaries)
-    
+
     # Use LLM to create final polished report
     synthesis_prompt = f"""Create a comprehensive research report from these summaries:
 
@@ -332,13 +339,11 @@ Structure the report as:
 6. Sources Referenced
 
 Be concise but thorough. Use markdown formatting."""
-    
+
     try:
-        
-        response = await llm_secondary.ainvoke([
-            HumanMessage(content=synthesis_prompt)
-        ])
-        
+
+        response = await llm_secondary.ainvoke([HumanMessage(content=synthesis_prompt)])
+
         return {"final_research_report": response.content}
     except Exception as e:
         print(f"Error in finalize_research: {e}")
@@ -346,11 +351,205 @@ Be concise but thorough. Use markdown formatting."""
         return {"final_research_report": f"Research Report:\n\n{combined_content}"}
 
 
-async def research_answer_node(state:ChatState):
-    report = state['final_research_report']
-    print("REPORT ----->>>>", report)
-    response = await llm_secondary.ainvoke([
-        SystemMessage(content="Answer the user using the complete research. Do not call Tools."),
-        HumanMessage(content=report)
-    ])
+async def research_answer_node(state: ChatState):
+    report = state["final_research_report"]
+    response = await llm_secondary.ainvoke(
+        [
+            SystemMessage(
+                content="Answer the user using the complete research. Do not call Tools."
+            ),
+            HumanMessage(content=report),
+        ]
+    )
     return {"messages": [response]}
+
+
+# Planning Node
+async def planning_node(state: ChatState):
+    my_topic = state.get("writer_topic")
+    memory_lines = state.get("memories", [])
+    memory_context = (
+        "\n".join(f" - {m}" for m in memory_lines)
+        if memory_lines
+        else "No memories available."
+    )
+    plan: WritingPlan = await llm_WriterPlan.ainvoke(
+        [
+            {
+                "role": "system",
+                "content": f"""You are a expert content planner. Create a detailed writing plan.
+
+User memories (use these for tone/style):
+{memory_context}
+
+Your plan must include:
+1. A clear, engaging title
+2. Sections with headings, purpose, paragraph count, code/image requirements
+3. Estimated word count
+4. Tone guidance based on user's writing style from memories
+
+Be specific. For each section, say exactly what it should cover.
+""",
+            },
+            {"role": "user", "content": f"Create a writing plan for: {my_topic}"},
+        ]
+    )
+    print(plan)
+    return {"writer_output": {"plan": plan.model_dump()}, "writer_iteration": 0}
+
+
+# Write Content Node
+async def write_content_node(state: ChatState):
+    plan = state["writer_output"]["plan"]
+    print("My Plan ----> ", plan)
+    feedback = state["writer_output"].get("feedback", "")
+    print("My Feedback ----> ", feedback)
+    iteration = state["writer_iteration"]
+    print("My Iteration ----> ", iteration)
+
+    # prompt 1
+    sections_prompt = ""
+    for i, section in enumerate(plan["sections"], 1):
+        sections_prompt += f"""
+Section {i}:
+- Heading: {section["heading"]}
+- Purpose: {section["purpose"]}
+- Paragraph Count: {section["paragraph_count"]}
+- Code Blocks: {section["code_blocks"]}
+- Image Suggestions: {section.get("image_suggestions", "None")}
+"""
+    # Prompt 2 - correction thingy
+    correction_prompt = ""
+    if feedback and iteration > 0:
+        correction_prompt = f"""
+PREVIOUS ITERATION FEEDBACK (fix these issues):
+{feedback}
+"""
+    #  Prompt 3 - Main One
+    system_content = f"""You are a expert content writer. Write in clear, engaging markdown.
+
+TONE GUIDANCE:
+{plan['tone_guidance']}
+
+TARGET WORD COUNT: ~{plan['estimated_word_count']} words
+
+WRITING RULES:
+- Use proper markdown headings (# for title, ## for sections)
+- Write in the user's voice per tone guidance above
+- Include code blocks with language tags when required (```python, ```bash, etc.)
+- Place `[Image: description]` placeholders where images are suggested
+- Each paragraph should be 3-5 sentences
+- Use bold for key terms, bullet points for lists
+- Never include meta-commentary like "As mentioned above" or "In this section"
+- End each section naturally — no concluding fluff
+- Here is strict Mardown Rules {MARKDOWN_RULES}
+
+SECTIONS TO WRITE:
+{sections_prompt}
+{correction_prompt}"""
+
+    response = await llm_secondary.ainvoke(
+        [
+            {"role": "system", "content": system_content},
+            {"role": "user", "content": f"Write the full content for: {plan['title']}"},
+        ]
+    )
+
+    return {
+        "writer_output": {"plan": plan, "draft": response.content, "feedback": feedback}
+    }
+
+
+# Humanize + Finalize Node
+
+
+async def humanize_finalize_node(state: ChatState, runtime: Runtime[UserContext]):
+    plan = state["writer_output"]["plan"]
+    draft = state["writer_output"]["draft"]
+    tone_guidance = plan.get(
+        "tone_guidance", "Write in a clean & clear way in humanize 8 grade student tone"
+    )
+    user_id = runtime.context.user_id
+    memory_namespace = ("memories", user_id)
+    style_memories = await runtime.store.asearch(
+        memory_namespace,
+        query="writing style tone vocabulary voice preferences",
+        limit=5,
+    )
+    memory_lines = [d.value["data"] for d in style_memories]
+    all_memories = list[set(state.get("memories", []) + memory_lines)]
+    memory_context = "\n".join(f"- {m}" for m in all_memories)
+    humanize_prompt = f"""You are a style editor. Your job: rewrite the content below to match the user's voice.
+
+USER'S WRITING STYLE (from memories):
+{memory_context}
+
+TONE GUIDANCE:
+{tone_guidance}
+
+RULES:
+- Preserve all facts, code blocks, and structure from the original
+- Adjust: sentence rhythm, word choice, formality level, paragraph length
+- Use the user's typical vocabulary and phrasing patterns
+- Keep markdown formatting intact (headings, code blocks, lists)
+- Do not add or remove content sections — only adjust style
+- Replace `[Image: ...]` placeholders with actual markdown image syntax if context is sufficient (use a placeholder URL like `https://placehold.co/800x400` if no real URL known)
+
+ORIGINAL CONTENT:
+{draft}
+
+Return ONLY the rewritten content. No explanations, no meta-commentary."""
+    response = await llm_secondary.ainvoke(
+        [
+            {"role": "system", "content": humanize_prompt},
+            {"role": "user", "content": "Rewrite this in the user's voice."},
+        ]
+    )
+    humanized = response.content
+
+    # Checking Part
+    check_prompt = f"""Evaluate this content:
+
+PLAN:
+Title: {plan['title']}
+Sections: {[s['heading'] for s in plan['sections']]}
+
+CONTENT:
+{humanized[:4000]}
+
+Check for:
+1. STYLE MATCH: Does it match the user's voice from these memories?
+{memory_context}
+2. COMPLETENESS: Are all planned sections present and fleshed out?
+3. ISSUES: Missing sections, broken markdown, placeholder images not resolved, orphaned references, incomplete sentences."""
+
+    check: StyleCheck = await llm_style_check.ainvoke(
+        [{"role": "system", "content": check_prompt}]
+    )
+
+    # Chekcking Here ---
+    if check.should_loop and state["writer_iteration"] < 2:
+        return {
+            "writer_output": {
+                "plan": plan,
+                "draft": humanized,
+                "feedback": (
+                    "\n".join(check.issues)
+                    if check.issues
+                    else "Style score too low. Make it match the user's voice better."
+                ),
+            },
+            "writer_iteration": state["writer_iteration"] + 1,
+        }
+    return {
+        "writer_output": {
+            "plan": plan,
+            "draft": draft,
+            "humanized": humanized,
+            "feedback": "",
+        },
+        "editor_content": humanized,
+        "writer_requested": False,  
+        "writer_iteration": 0,
+    }
+ 

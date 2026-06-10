@@ -28,7 +28,8 @@ async def my_agent(
             continue
         message_chunk, metadata = chunk["data"]
         print(metadata.get("langgraph_node"))
-        if metadata.get("langgraph_node") not in ["chat_node", "tools","research_answer","research_topics"]:
+        if metadata.get("langgraph_node") not in ["chat_node", "tools", "research_answer", "research_topics",
+    "planning_node", "write_content", "humanize"]:
             continue
         if message_chunk:
             yield message_chunk.model_dump()

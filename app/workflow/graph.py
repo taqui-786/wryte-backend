@@ -5,7 +5,7 @@ from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from langgraph.store.postgres.aio import AsyncPostgresStore
 from langgraph.types import Send, Command
 from app.workflow.state import ChatState, UserContext
-from app.workflow.node import chat_node, classify_node, finalize_research, recall_node, remember_node, research_answer_node, research_node, research_topic_node
+from app.workflow.node import chat_node, classify_node, finalize_research, humanize_finalize_node, planning_node, recall_node, remember_node, research_answer_node, research_node, research_topic_node, write_content_node
 from app.workflow.tool import tool_node
 
 
@@ -21,7 +21,16 @@ def should_continue(state: ChatState) -> str:
 def route_after_tools(state: ChatState) -> str:
     if state.get("research_requested"):
         return "research_topics"
+    if state.get("writer_requested"):
+        return "planning_node"
     return "chat_node"
+
+def route_writer_flow(state: ChatState) -> str:
+    if state["writer_requested"]:
+        if state["writer_iteration"] < 2 and state["writer_output"].get("feedback"):
+            return "write_content"   # correction loop
+    return "remember"                # done → go to END
+
 
 # Fan-outttttt
 def route_to_research(state:ChatState) -> list[Send]:
@@ -49,6 +58,10 @@ def build_graph(
     builder.add_node("research_topics", research_topic_node)
     builder.add_node("finalize_research", finalize_research)
     builder.add_node("research_answer", research_answer_node)
+    # My writer nodes
+    builder.add_node("planning_node", planning_node)
+    builder.add_node("write_content", write_content_node)
+    builder.add_node("humanize", humanize_finalize_node)
     
     
     # And My Edges (Buddies)
@@ -59,12 +72,12 @@ def build_graph(
     builder.add_conditional_edges("chat_node", should_continue,{
         "tools": "tools",
         "remember": "remember",
-        "research_topics": "research_topics",
     })
     
     builder.add_conditional_edges("tools", route_after_tools, {
         "chat_node": "chat_node",
         "research_topics": "research_topics",
+        "planning_node": "planning_node",
     })
     builder.add_edge("remember", END)
 
@@ -73,7 +86,15 @@ def build_graph(
     builder.add_edge("research","finalize_research")
     builder.add_edge("finalize_research","research_answer")
     builder.add_edge("research_answer","remember")
-
+    
+    # Writer flow
+    builder.add_edge("planning_node", "write_content")
+    builder.add_edge("write_content", "humanize")
+    builder.add_conditional_edges("humanize", route_writer_flow,{
+        "write_content":"write_content",
+        "remember":"remember",
+    })
+    
     return builder.compile(
         checkpointer=checkpointer,
         store=store,

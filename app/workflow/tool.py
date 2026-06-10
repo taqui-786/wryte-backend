@@ -65,7 +65,6 @@ def read_editor(
     is empty, returns an empty string.
     """
     content = state.get("editor_content", "") or ""
-    print("Editor content:", content)
     if not content.strip():
         return "The editor is currently empty."
     return content
@@ -126,8 +125,22 @@ def deep_research(
             "messages": [ToolMessage(f"Let me do a Deep research on: {topic}", tool_call_id=tool_call_id)]
         },
     )
+@tool
+def writer(
+    topic: str,
+    tool_call_id: Annotated[str, InjectedToolCallId] = "",
+) -> Command:
+    """Call this tool when you want to write content. just provide a clear topic"""
+    return Command(
+        update={
+            "writer_topic": topic,  # Set the topic for research_topic_node
+            "writer_requested": True,
+            "messages": [ToolMessage(f"Let me write about {topic}", tool_call_id=tool_call_id)]
+        },
+    )
 
-my_tools = [multiply, search_agent, read_editor, write_editor, deep_research]
+
+my_tools = [multiply, search_agent, read_editor, deep_research, writer]
 
 llm = ChatNVIDIA(
     model="stepfun-ai/step-3.5-flash",
@@ -139,17 +152,17 @@ llm = ChatNVIDIA(
 )
 
 llm_secondary = ChatNVIDIA(
-    model="stepfun-ai/step-3.5-flash",
+    model="stepfun-ai/step-3.7-flash",
     api_key=settings.NVIDIA_API_KEY,
     temperature=1,
     top_p=0.95,
-    max_completion_tokens=1024,
+    max_completion_tokens=4096,
 )
 llm_classifier = ChatNVIDIA(
     model="nvidia/llama-3.3-nemotron-super-49b-v1",  # 8B params is plenty for classification
     api_key=settings.NVIDIA_API_KEY,
     temperature=0,   # 0 = deterministic, no randomness. We want consistent YES/NO.
-    max_completion_tokens=100,  # only need a short JSON
+    max_completion_tokens=2048,  # only need a short JSON
 )
 
 # A small, fast model for extracting the actual fact
@@ -201,3 +214,27 @@ class ResearchTopic(BaseModel):
 
 llm_ResearchTopic = llm_classifier.with_structured_output(ResearchTopic)
 
+# Writer Plan schema
+class WritingSection(BaseModel):
+    heading: str = Field(description="Section heading/title")
+    purpose: str = Field(description="What this section should achieve")
+    paragraph_count: int = Field(description="How many paragraphs")
+    code_blocks: bool = Field(description="Whether code snippets are needed")
+    image_suggestions: str | None = Field(default=None, description="Image description if needed")
+
+class WritingPlan(BaseModel):
+    title: str = Field(description="Proposed title of the piece")
+    sections: list[WritingSection] = Field(description="List of sections")
+    estimated_word_count: int = Field(description="Target total word count")
+    tone_guidance: str = Field(description="Tone, voice, and style instructions")
+    
+llm_WriterPlan = llm_classifier.with_structured_output(WritingPlan)
+
+# Humanize Schema
+class StyleCheck(BaseModel):
+    style_match_score: int = Field(description="How well does the content match the user's voice? 1-10")
+    completeness_score: int = Field(description="Is every section complete with no gaps? 1-10")
+    issues: list[str] = Field(description="Specific issues to fix. Empty list if none.")
+    should_loop: bool = Field(description="True if content needs another iteration")
+
+llm_style_check = llm_classifier.with_structured_output(StyleCheck)

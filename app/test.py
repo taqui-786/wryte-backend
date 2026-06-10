@@ -14,7 +14,7 @@ load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), "..", ".env"))
 
 # ── LLM ──────────────────────────────────────────────────────────────────────
 llm = ChatNVIDIA(
-    model="nvidia/llama-3.3-nemotron-super-49b-v1",
+    model="stepfun-ai/step-3.7-flash",
     api_key=os.getenv("NVIDIA_API_KEY"),
     temperature=1,
     top_p=0.95,
@@ -134,7 +134,7 @@ Rules:
             {"role": "user", "content": user_content},
         ]
     )
-    print(response.urls, len(response.urls))
+    print(response, len(response.urls))
 
 
 # testingStuff()
