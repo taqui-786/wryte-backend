@@ -107,9 +107,9 @@ def write_editor(
 async def search_agent(query: str) -> list:
     """Search the web for information. Always use this tool whenever you need
     current information or real-time data. Give a short query as input (max 400 tokens)."""
-    response = await client.search.query(query=query, location="US")
+    response =  client.search.query(query=query, location="US")
     top_urls = [r.url for r in response.results[:3]]
-    pages = await client.fetch.get_contents(urls=top_urls, format="markdown")
+    pages =  client.fetch.get_contents(urls=top_urls, format="markdown")
     return pages.results
 
 # In tool.py - replace deep_research tool
