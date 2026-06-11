@@ -1,7 +1,8 @@
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 from langchain_core.messages import ToolMessage
 from langchain_core.tools import InjectedToolCallId, tool
 from langchain_nvidia_ai_endpoints import ChatNVIDIA, NVIDIAEmbeddings
+from langchain_openrouter import ChatOpenRouter
 from langgraph.prebuilt import ToolNode, InjectedState
 from langgraph.types import Command
 from pydantic import BaseModel, ConfigDict, Field
@@ -140,7 +141,7 @@ def writer(
     )
 
 
-my_tools = [multiply, search_agent, read_editor, deep_research, writer]
+my_tools = [multiply, search_agent, read_editor, deep_research, writer,write_editor]
 
 llm = ChatNVIDIA(
     model="stepfun-ai/step-3.5-flash",
@@ -150,13 +151,20 @@ llm = ChatNVIDIA(
     max_completion_tokens=16384,
     model_kwargs={"enable_thinking": True, "reasoning_budget": 3000},
 )
-
+# llm_classifier = ChatOpenRouter(
+#     model="nex-agi/nex-n2-pro:free",
+#     api_key=settings.OPENROUTER_API_KEY,
+#     temperature=0.3,
+#     reasoning={"effort": "low"},
+#     top_p=0.95,
+#     max_completion_tokens=2048,
+# )
 llm_secondary = ChatNVIDIA(
-    model="stepfun-ai/step-3.7-flash",
+    model="stepfun-ai/step-3.5-flash",
     api_key=settings.NVIDIA_API_KEY,
-    temperature=1,
-    top_p=0.95,
-    max_completion_tokens=4096,
+    temperature=0.3,
+    max_completion_tokens=8192,
+    model_kwargs={"enable_thinking": False},
 )
 llm_classifier = ChatNVIDIA(
     model="nvidia/llama-3.3-nemotron-super-49b-v1",  # 8B params is plenty for classification
@@ -232,9 +240,30 @@ llm_WriterPlan = llm_classifier.with_structured_output(WritingPlan)
 
 # Humanize Schema
 class StyleCheck(BaseModel):
-    style_match_score: int = Field(description="How well does the content match the user's voice? 1-10")
-    completeness_score: int = Field(description="Is every section complete with no gaps? 1-10")
-    issues: list[str] = Field(description="Specific issues to fix. Empty list if none.")
+    style_match_score: int = Field(description="1-10")
+    completeness_score: int = Field(description="1-10")
+    issues: list[str] = Field(description="Specific issues")
     should_loop: bool = Field(description="True if content needs another iteration")
 
 llm_style_check = llm_classifier.with_structured_output(StyleCheck)
+
+# update editor
+
+class EditorChange(BaseModel):
+    line: int = Field(description="1-indexed block-level line number")
+    type: Literal["replace", "delete", "insert"] = Field(
+        description="replace=swap content at line, delete=remove line, insert=add new content AFTER this line"
+    )
+    content: str = Field(description="New content (for replace/insert). Empty string for delete.")
+
+
+class UpdateEditorInput(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    changes: list[EditorChange] = Field(
+        description="List of line-level changes. ONLY include lines that changed."
+    )
+    state: Annotated[dict[str, Any], InjectedState()] | None = Field(
+        default=None,
+        description="Injected graph state. Not provided by the model.",
+    )

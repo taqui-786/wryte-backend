@@ -9,15 +9,14 @@ from app.workflow.tool import (
     MARKDOWN_RULES,
     OnlyHandyReasearchTopic,
     RememberDecision,
-    ResearchTopic,
     StyleCheck,
     SummarizedPageContent,
     WritingPlan,
     client,
     llm_OnlyHandyReasearchTopic,
-    llm_ResearchTopic,
     llm_SummarizedPageContent,
     llm_WriterPlan,
+    llm_classifier,
     llm_classifier_remeber_structured,
     llm_extractor,
     llm_secondary,
@@ -41,14 +40,24 @@ async def classify_node(state: ChatState, runtime: Runtime[UserContext]):
     if len(last_content) < 5:
         return {"should_remember": False}
     decision: RememberDecision = await llm_classifier_remeber_structured.ainvoke(
-        f"Does this message contain personal information about the user worth remembering?\n\n"
-        f"YES if the user reveals ANYTHING about themselves - facts, projects, work, "
-        f"possessions, preferences, habits, life details, or instructions. "
-        f"Even if it's casual or followed by a question (e.g. 'I built my portfolio at X, thoughts?' "
-        f"contains 'portfolio at X' → YES).\n"
-        f"NO for pure questions, greetings, chitchat, or statements about others.\n\n"
-        f'User message: "{last_content}"'
-    )
+    f"You are a memory classifier for a personal AI assistant.\n\n"
+    
+    f"REMEMBER (True) if the user reveals ANYTHING about themselves:\n"
+    f"- Facts, projects, work, skills, habits, preferences, opinions, possessions\n"
+    f"- Instructions for how the AI should behave\n"
+    f"- Even casual mentions mid-question ('I built my portfolio in Next.js, thoughts?' → True)\n"
+    f"- Long or detailed messages that reveal writing style, tone, or vocabulary\n\n"
+    
+    f"SKIP (False) only for:\n"
+    f"- Pure questions with zero self-disclosure ('What is RAG?')\n"
+    f"- Greetings, filler, thanks ('hey', 'ok', 'thanks')\n"
+    f"- Statements purely about others or external topics\n\n"
+    
+    f"STYLE NOTE: If the message is 30+ words or has a distinctive voice/tone, "
+    f"mention it in the reason field — e.g. 'casual technical tone, thinks out loud, worth style profiling.'\n\n"
+    
+    f'User message: "{last_content}"'
+)
     print(decision.should_remember)
     return {"should_remember": decision.should_remember}
 
@@ -71,36 +80,42 @@ async def recall_node(state: ChatState, runtime: Runtime[UserContext]):
 
 
 SYSTEM_PROMPT_TEMPLATE = """\
-You are a helpful, thoughtful writing assistant called Wryte.
+You are Wryte — a writing assistant built into a markdown editor.
+You do NOT chat generically. You help the user write, edit, refine,
+and research content inside their editor. Everything the user refers
+to is about what's in that editor.
 
-You have access to the following long-term memories about the user:
+The user's content lives in the editor. That is your workspace.
+
+YOUR IDENTITY:
+- You are an extension of the editor, not a standalone chatbot.
+- "Read", "check", "show", "review", "summarize", "what do I have"
+  → means use `read_editor`.
+- "Write", "update", "fix", "draft", "improve", "rewrite", "change"
+  → means use `write_editor`.
+- Never guess or invent editor content. Always read it first.
+
+YOUR TOOLS:
+1. `read_editor` — Use FIRST for any task involving existing content
+   (review, summarize, edit, fix, check word count, find typos, continue)
+2. `write_editor` — Write/replace content in the editor. REPLACES
+   everything, so read first if you need to preserve text.
+3. `writer` — Long-form writing (articles, blog posts, guides).
+   Triggers plan → write → humanize pipeline automatically.
+4. `search_agent` — Quick web lookups for facts or references.
+5. `deep_research` — Comprehensive research on a topic.
+6. `multiply` — Simple arithmetic.
+
+BEHAVIOR RULES:
+- Be concise. 1-3 sentences unless asked for more.
+- Do not explain your actions. Just do the work and confirm briefly.
+- No disclaimers, caveats, or unnecessary commentary.
+- Prefer `writer` tool for "write about X" (it plans, drafts, humanizes).
+- For editing/reviewing existing content: `read_editor` → `write_editor`.
+- Never hallucinate editor content.
+
+When relevant, draw on these memories about the user's writing style:
 {memory_context}
-
-Use these memories naturally when they are relevant. Do not mention the
-memory system explicitly unless asked.
-
-Reply in markdown format. Be concise and to the point. Always think briefly,
-then reply with your final content. You have access to tools that can
-help you with certain tasks. Use them when needed.
-
-EDITOR TOOLS:
-- Use the `read_editor` tool whenever you need to see what the user is
-  currently writing before you can help them (summarize, edit, continue,
-  review, fix, count words, find typos, etc.). It returns the entire
-  current editor content.
-- Use the `write_editor` tool to write or replace content in the editor.
-  The `content` argument REPLACES the current editor content entirely, so
-  if you need to preserve existing text, call `read_editor` first and
-  include the existing content in the new value.
-- Do not invent or guess editor content. If you are unsure, call
-  `read_editor` first.
-
-EDITOR MARKDOWN RULES (the editor only supports the syntax listed below):
-{MARKDOWN_RULES}
-
-Always produce content that conforms to these rules. When you write to the
-editor, the `content` you pass to `write_editor` MUST be a single
-well-formed markdown string using only the inline and block forms above.
 """
 
 
@@ -143,13 +158,32 @@ async def extract_and_save_node(state: ChatState, runtime: Runtime[UserContext])
     )
     memory_namespace = ("memories", runtime.context.user_id)
     extraction_prompt = (
-        f'User message: "{last_content}"\n\n'
-        "Extract ONLY stable facts about the USER that may be useful in future conversations. "
-        "Ignore information about assistants, bots, AI characters, quoted text, greetings, or other people. "
-        "Do not guess or infer interests, traits, or preferences. "
-        "Return only the extracted facts. If no clear user fact exists, return 'NONE'."
-    )
-    extraction = await llm_extractor.ainvoke(
+    f'User message: "{last_content}"\n\n'
+    "Extract stable, reusable facts about the USER only.\n\n"
+    
+    "EXTRACT:\n"
+    "- Personal facts (name, age, location, job, company)\n"
+    "- Projects or work they are doing\n"
+    "- Skills, tools, or tech they use\n"
+    "- Preferences, opinions, or dislikes\n"
+    "- Habits or routines\n"
+    "- Instructions for how the AI should behave\n"
+    "- Relationships or team context\n\n"
+    
+    "WRITING STYLE (only if message is 30+ words or has a distinctive voice):\n"
+    "- Note their tone, vocabulary, sentence structure, personality\n"
+    "- Add a one-line replication note: how to write content in their exact style\n\n"
+    
+    "IGNORE:\n"
+    "- Questions, greetings, filler\n"
+    "- Statements about others, AI, or external topics\n"
+    "- Anything inferred or guessed — only explicit signals\n\n"
+    
+    "Return a clean summary of extracted facts. "
+    "If style profiling applies, append it at the end under 'Style:'. "
+    "If nothing to extract, return 'NONE'."
+)
+    extraction = await llm_classifier.ainvoke(
         [{"role": "user", "content": extraction_prompt}]
     )
     memory_text = extraction.content.strip()
@@ -526,7 +560,10 @@ Check for:
     check: StyleCheck = await llm_style_check.ainvoke(
         [{"role": "system", "content": check_prompt}]
     )
-
+    if check.style_match_score < 6 or check.completeness_score < 6:
+        check.should_loop = True
+        if not check.issues:
+            check.issues = ["Quality scores too low. Needs revision."]
     # Chekcking Here ---
     if check.should_loop and state["writer_iteration"] < 2:
         return {

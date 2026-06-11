@@ -28,11 +28,21 @@ async def my_agent(
             continue
         message_chunk, metadata = chunk["data"]
         print(metadata.get("langgraph_node"))
-        if metadata.get("langgraph_node") not in ["chat_node", "tools", "research_answer", "research_topics",
-    "planning_node", "write_content", "humanize"]:
+        if metadata.get("langgraph_node") not in [
+            "chat_node",
+            "tools",
+            "research_answer",
+            "research_topics",
+            "planning_node",
+            "write_content",
+            "humanize",
+        ]:
             continue
         if message_chunk:
-            yield message_chunk.model_dump()
+            yield {
+                "node": metadata.get("langgraph_node"),
+                "message": message_chunk.model_dump(),
+            }
 
 
 async def get_chat_state(workflow: CompiledStateGraph, thread_id: str):

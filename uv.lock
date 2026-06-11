@@ -847,6 +847,15 @@ wheels = [
 ]
 
 [[package]]
+name = "jsonpath-python"
+version = "1.1.6"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/98/18/4ca8742534a5993ff383f7602e325ce2d5d7cc93d72ac5e1cdedbea8a458/jsonpath_python-1.1.6.tar.gz", hash = "sha256:dded9932b4ec41fb8726e09c83afa4e6be618f938c2db287cc2a81723c639671", size = 88178, upload-time = "2026-05-07T01:26:34.482Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/55/8a/1270a6803bd821cbfcdda387eaa13cb41a7b1f7b9bd145979b3bfb9d6cb7/jsonpath_python-1.1.6-py3-none-any.whl", hash = "sha256:a1c50afd8d3fbbaf47a4873bc890dcb3c15da96f5c020327977d844d8731a2d4", size = 14453, upload-time = "2026-05-07T01:26:33.306Z" },
+]
+
+[[package]]
 name = "jsonpointer"
 version = "3.1.1"
 source = { registry = "https://pypi.org/simple" }
@@ -902,6 +911,19 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/f0/d5/5d70c7b7a66dfabc4c355e408a066e8bef7d2715f3b7854ce44704886119/langchain_nvidia_ai_endpoints-1.2.1.tar.gz", hash = "sha256:055d2511fa7374da65e5d3dd1705fb09125620a124c6247212d661286f64fa8d", size = 57520, upload-time = "2026-03-16T16:42:34.682Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/c7/b7/99f72331842b0f62da891411c5590ff7fab70a1a753a9a1be9348921995e/langchain_nvidia_ai_endpoints-1.2.1-py3-none-any.whl", hash = "sha256:eafb2186dea25d163089552c062274664540f2cbe251861c515700645fbf256d", size = 61820, upload-time = "2026-03-16T16:42:33.657Z" },
+]
+
+[[package]]
+name = "langchain-openrouter"
+version = "0.2.3"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "langchain-core" },
+    { name = "openrouter" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/8c/c3/aef363ffe2060c8fba59eb94cb7d12bc9dec059b5f41bfea37f9267b65f7/langchain_openrouter-0.2.3.tar.gz", hash = "sha256:51da9fef8cc065662ab8493c86207039705e721f5086ee603bcb8a456e64dbcb", size = 163923, upload-time = "2026-05-01T21:59:41.977Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/a8/80/82428fdb830d0ff04522f9c4a2d830f54fc309d49f8b8945ca1b5b8d22a3/langchain_openrouter-0.2.3-py3-none-any.whl", hash = "sha256:8fafa4dd2682d6e96135b0affde134ae992dd69b0315dd08ed1707d4cf83f896", size = 23373, upload-time = "2026-05-01T21:59:40.724Z" },
 ]
 
 [[package]]
@@ -1188,6 +1210,21 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/0c/f7/addf1087b860ac60e6f382240f64fb99f8bfb532bb06f7c542b83c29ca61/multidict-6.7.1-cp314-cp314t-win_amd64.whl", hash = "sha256:497bde6223c212ba11d462853cfa4f0ae6ef97465033e7dc9940cdb3ab5b48e5", size = 53542, upload-time = "2026-01-26T02:46:08.809Z" },
     { url = "https://files.pythonhosted.org/packages/4c/81/4629d0aa32302ef7b2ec65c75a728cc5ff4fa410c50096174c1632e70b3e/multidict-6.7.1-cp314-cp314t-win_arm64.whl", hash = "sha256:2bbd113e0d4af5db41d5ebfe9ccaff89de2120578164f86a5d17d5a576d1e5b2", size = 44719, upload-time = "2026-01-26T02:46:11.146Z" },
     { url = "https://files.pythonhosted.org/packages/81/08/7036c080d7117f28a4af526d794aab6a84463126db031b007717c1a6676e/multidict-6.7.1-py3-none-any.whl", hash = "sha256:55d97cc6dae627efa6a6e548885712d4864b81110ac76fa4e534c03819fa4a56", size = 12319, upload-time = "2026-01-26T02:46:44.004Z" },
+]
+
+[[package]]
+name = "openrouter"
+version = "0.9.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "httpcore" },
+    { name = "httpx" },
+    { name = "jsonpath-python" },
+    { name = "pydantic" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/e4/f5/e19b11ea336129b3a801c4d92cf2a4f38ef8b44a2e9600afb4a5e0984c97/openrouter-0.9.1.tar.gz", hash = "sha256:0fe00c3640c2b956a244b75b46feb02c2526cda9187f5d5edfbedca87cc18fab", size = 181894, upload-time = "2026-04-14T16:50:15.937Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/08/12/ec58ea55f463f4455ef4676b1fc487a895a647c5975f5f13529f02727f1e/openrouter-0.9.1-py3-none-any.whl", hash = "sha256:2f1dcaa956778781855f473bad28400cf310ad5626df8747ec888997fbdb6223", size = 396449, upload-time = "2026-04-14T16:50:14.486Z" },
 ]
 
 [[package]]
@@ -2104,6 +2141,7 @@ dependencies = [
     { name = "httpx" },
     { name = "langchain" },
     { name = "langchain-nvidia-ai-endpoints" },
+    { name = "langchain-openrouter" },
     { name = "langgraph" },
     { name = "langgraph-checkpoint-postgres" },
     { name = "psycopg", extra = ["binary", "pool"] },
@@ -2128,6 +2166,7 @@ requires-dist = [
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "langchain", specifier = ">=1.2.17" },
     { name = "langchain-nvidia-ai-endpoints", specifier = ">=1.2.1" },
+    { name = "langchain-openrouter", specifier = ">=0.2.3" },
     { name = "langgraph", specifier = ">=1.1.10" },
     { name = "langgraph-checkpoint-postgres", specifier = ">=3.0.5" },
     { name = "psycopg", extras = ["binary", "pool"], specifier = ">=3.3.4" },
