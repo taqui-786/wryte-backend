@@ -1,7 +1,7 @@
 import asyncio
 import json
 import uuid
-from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langgraph.runtime import Runtime
 from pydantic import BaseModel
 from app.workflow.state import ChatState, UserContext
@@ -40,24 +40,20 @@ async def classify_node(state: ChatState, runtime: Runtime[UserContext]):
     if len(last_content) < 5:
         return {"should_remember": False}
     decision: RememberDecision = await llm_classifier_remeber_structured.ainvoke(
-    f"You are a memory classifier for a personal AI assistant.\n\n"
-    
-    f"REMEMBER (True) if the user reveals ANYTHING about themselves:\n"
-    f"- Facts, projects, work, skills, habits, preferences, opinions, possessions\n"
-    f"- Instructions for how the AI should behave\n"
-    f"- Even casual mentions mid-question ('I built my portfolio in Next.js, thoughts?' → True)\n"
-    f"- Long or detailed messages that reveal writing style, tone, or vocabulary\n\n"
-    
-    f"SKIP (False) only for:\n"
-    f"- Pure questions with zero self-disclosure ('What is RAG?')\n"
-    f"- Greetings, filler, thanks ('hey', 'ok', 'thanks')\n"
-    f"- Statements purely about others or external topics\n\n"
-    
-    f"STYLE NOTE: If the message is 30+ words or has a distinctive voice/tone, "
-    f"mention it in the reason field — e.g. 'casual technical tone, thinks out loud, worth style profiling.'\n\n"
-    
-    f'User message: "{last_content}"'
-)
+        f"You are a memory classifier for a personal AI assistant.\n\n"
+        f"REMEMBER (True) if the user reveals ANYTHING about themselves:\n"
+        f"- Facts, projects, work, skills, habits, preferences, opinions, possessions\n"
+        f"- Instructions for how the AI should behave\n"
+        f"- Even casual mentions mid-question ('I built my portfolio in Next.js, thoughts?' → True)\n"
+        f"- Long or detailed messages that reveal writing style, tone, or vocabulary\n\n"
+        f"SKIP (False) only for:\n"
+        f"- Pure questions with zero self-disclosure ('What is RAG?')\n"
+        f"- Greetings, filler, thanks ('hey', 'ok', 'thanks')\n"
+        f"- Statements purely about others or external topics\n\n"
+        f"STYLE NOTE: If the message is 30+ words or has a distinctive voice/tone, "
+        f"mention it in the reason field — e.g. 'casual technical tone, thinks out loud, worth style profiling.'\n\n"
+        f'User message: "{last_content}"'
+    )
     print(decision.should_remember)
     return {"should_remember": decision.should_remember}
 
@@ -79,11 +75,38 @@ async def recall_node(state: ChatState, runtime: Runtime[UserContext]):
     return {"memories": memory_lines}
 
 
+EDITOR_CHANGE_GUIDELINES = """\
+EDITOR CHANGE RULES:
+When editing EXISTING content, use `update_editor` with ONLY the changed lines.
+
+Workflow:
+1. Call `read_editor` first to see current content.
+2. Identify ONLY the lines that need to change.
+3. Call `update_editor(changes=[...])` with just those changes.
+   DO NOT return the full document — only what changed.
+
+Rules:
+- Line = one block (paragraph, heading, code block, list, etc.).
+  Blocks are separated by blank lines in markdown.
+- Line numbers are 1-indexed.
+- Types: "replace" (swap content at line), "delete" (remove line),
+  "insert" (add new content AFTER that line number).
+- If asked to do a small edit on existing content, NEVER rewrite
+  the whole thing. Use update_editor with 1-3 minimal changes.
+
+Examples:
+- "Make intro shorter" → changes=[{"line": 2, "type": "replace",
+  "content": "Short intro."}]
+- "Add a conclusion" → changes=[{"line": 8, "type": "insert",
+  "content": "## Conclusion\\n\\nConcluding paragraph."}]
+- "Remove 3rd para" → changes=[{"line": 3, "type": "delete", "content": ""}]
+"""
+
 SYSTEM_PROMPT_TEMPLATE = """\
 You are Wryte — a writing assistant built into a markdown editor.
 You do NOT chat generically. You help the user write, edit, refine,
 and research content inside their editor. Everything the user refers
-to is about what's in that editor.
+to is about what's in that editor. If you are confuse just stop and Ask user to be more specific.
 
 The user's content lives in the editor. That is your workspace.
 
@@ -92,27 +115,29 @@ YOUR IDENTITY:
 - "Read", "check", "show", "review", "summarize", "what do I have"
   → means use `read_editor`.
 - "Write", "update", "fix", "draft", "improve", "rewrite", "change"
-  → means use `write_editor`.
+  → means use `update_editor`.
 - Never guess or invent editor content. Always read it first.
 
 YOUR TOOLS:
 1. `read_editor` — Use FIRST for any task involving existing content
    (review, summarize, edit, fix, check word count, find typos, continue)
-2. `write_editor` — Write/replace content in the editor. REPLACES
-   everything, so read first if you need to preserve text.
+2. `update_editor` — Edit existing content via targeted line changes.
+   Only return the changed lines, NOT the full document.
 3. `writer` — Long-form writing (articles, blog posts, guides).
    Triggers plan → write → humanize pipeline automatically.
 4. `search_agent` — Quick web lookups for facts or references.
 5. `deep_research` — Comprehensive research on a topic.
-6. `multiply` — Simple arithmetic.
+6. `scrape_url` — Fetch content from a URL.
 
 BEHAVIOR RULES:
 - Be concise. 1-3 sentences unless asked for more.
 - Do not explain your actions. Just do the work and confirm briefly.
 - No disclaimers, caveats, or unnecessary commentary.
 - Prefer `writer` tool for "write about X" (it plans, drafts, humanizes).
-- For editing/reviewing existing content: `read_editor` → `write_editor`.
+- For editing/reviewing existing content: `read_editor` → `update_editor`.
 - Never hallucinate editor content.
+
+{editor_change_guidelines}
 
 When relevant, draw on these memories about the user's writing style:
 {memory_context}
@@ -128,7 +153,9 @@ async def chat_node(state: ChatState, runtime: Runtime[UserContext]):
         memory_context = "No memories yet."
     print("Messages count:", len(list(state["messages"])))
     system_prompt = SYSTEM_PROMPT_TEMPLATE.format(
-        memory_context=memory_context, MARKDOWN_RULES=MARKDOWN_RULES
+        memory_context=memory_context,
+        editor_change_guidelines=EDITOR_CHANGE_GUIDELINES,
+        MARKDOWN_RULES=MARKDOWN_RULES,
     )
     response = await llm_with_tool.ainvoke(
         [SystemMessage(content=system_prompt)] + list(state["messages"])
@@ -158,31 +185,27 @@ async def extract_and_save_node(state: ChatState, runtime: Runtime[UserContext])
     )
     memory_namespace = ("memories", runtime.context.user_id)
     extraction_prompt = (
-    f'User message: "{last_content}"\n\n'
-    "Extract stable, reusable facts about the USER only.\n\n"
-    
-    "EXTRACT:\n"
-    "- Personal facts (name, age, location, job, company)\n"
-    "- Projects or work they are doing\n"
-    "- Skills, tools, or tech they use\n"
-    "- Preferences, opinions, or dislikes\n"
-    "- Habits or routines\n"
-    "- Instructions for how the AI should behave\n"
-    "- Relationships or team context\n\n"
-    
-    "WRITING STYLE (only if message is 30+ words or has a distinctive voice):\n"
-    "- Note their tone, vocabulary, sentence structure, personality\n"
-    "- Add a one-line replication note: how to write content in their exact style\n\n"
-    
-    "IGNORE:\n"
-    "- Questions, greetings, filler\n"
-    "- Statements about others, AI, or external topics\n"
-    "- Anything inferred or guessed — only explicit signals\n\n"
-    
-    "Return a clean summary of extracted facts. "
-    "If style profiling applies, append it at the end under 'Style:'. "
-    "If nothing to extract, return 'NONE'."
-)
+        f'User message: "{last_content}"\n\n'
+        "Extract stable, reusable facts about the USER only.\n\n"
+        "EXTRACT:\n"
+        "- Personal facts (name, age, location, job, company)\n"
+        "- Projects or work they are doing\n"
+        "- Skills, tools, or tech they use\n"
+        "- Preferences, opinions, or dislikes\n"
+        "- Habits or routines\n"
+        "- Instructions for how the AI should behave\n"
+        "- Relationships or team context\n\n"
+        "WRITING STYLE (only if message is 30+ words or has a distinctive voice):\n"
+        "- Note their tone, vocabulary, sentence structure, personality\n"
+        "- Add a one-line replication note: how to write content in their exact style\n\n"
+        "IGNORE:\n"
+        "- Questions, greetings, filler\n"
+        "- Statements about others, AI, or external topics\n"
+        "- Anything inferred or guessed — only explicit signals\n\n"
+        "Return a clean summary of extracted facts. "
+        "If style profiling applies, append it at the end under 'Style:'. "
+        "If nothing to extract, return 'NONE'."
+    )
     extraction = await llm_classifier.ainvoke(
         [{"role": "user", "content": extraction_prompt}]
     )
@@ -399,7 +422,7 @@ async def research_answer_node(state: ChatState):
 
 
 # Planning Node
-async def planning_node(state: ChatState):
+async def writer_planning_node(state: ChatState):
     my_topic = state.get("writer_topic")
     memory_lines = state.get("memories", [])
     memory_context = (
@@ -586,7 +609,8 @@ Check for:
             "feedback": "",
         },
         "editor_content": humanized,
-        "writer_requested": False,  
+        "writer_requested": False,
         "writer_iteration": 0,
     }
- 
+
+

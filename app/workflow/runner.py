@@ -33,9 +33,12 @@ async def my_agent(
             "tools",
             "research_answer",
             "research_topics",
-            "planning_node",
+            "writer_planning_node",
             "write_content",
             "humanize",
+            "task_planner",
+            "step_executor",
+            "step_completed"
         ]:
             continue
         if message_chunk:

@@ -13,12 +13,13 @@ from langchain_openrouter import ChatOpenRouter
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), "..", ".env"))
 
 # ── LLM ──────────────────────────────────────────────────────────────────────
-llm = ChatOpenRouter(
-    model="nex-agi/nex-n2-pro:free",
-    api_key=os.getenv("OPENROUTER_API_KEY"),
-    temperature=1,
+llm = ChatNVIDIA(
+    model="stepfun-ai/step-3.7-flash",
+    api_key=os.getenv("NVIDIA_API_KEY"),
+    temperature=0,
     top_p=0.95,
-    max_completion_tokens=1024,
+    max_completion_tokens=16384,
+    model_kwargs={"enable_thinking": False},
 )
 
 
