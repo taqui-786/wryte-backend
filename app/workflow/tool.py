@@ -138,7 +138,7 @@ llm = ChatNVIDIA(
 # )
 llm_powerfull = ChatNVIDIA(
     model="stepfun-ai/step-3.7-flash",
-    api_key=os.getenv("NVIDIA_API_KEY"),
+    api_key=settings.NVIDIA_API_KEY,
     temperature=0,
     top_p=0.95,
     max_completion_tokens=16384,
