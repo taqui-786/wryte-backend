@@ -42,7 +42,7 @@ async def replanner_node(state: ChatState) -> dict:
     
     return {
         "plan": new_plan_dicts,
-        "completed_step_ids": set(),  # Reset — new plan
+        "completed_step_ids": [],  # Reset — new plan
         "current_executing_ids": [],
         "needs_replan": False,
         "replan_reason": None,

@@ -1,3 +1,5 @@
+from langchain_core.messages import AIMessage
+
 from app.workflow.state import ChatState
 
 
@@ -53,4 +55,5 @@ async def step_complete_node(state: ChatState) -> dict:
         "research_requested": False,
         "writer_requested": False,
         "step_results": [f"Step {step['step']} ({step['action']}): {result[:200]}"],
+        "messages": [AIMessage(content=f"Step {step['step']} ({step['action']}) completed with status: {status}")],
     }

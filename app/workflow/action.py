@@ -40,7 +40,7 @@ register_action(ActionSpec(
     description="Write a blog post/article",
     param_schema={"topic": {"type": "string"}},
     requires_subgraph=True,
-    subgraph_entry="planning_node",
+    subgraph_entry="writer_planning_node",
     state_setup=setup_write_blog,
 ))
 

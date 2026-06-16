@@ -8,7 +8,7 @@ from app.workflow.tool import Plan, llm_powerfull
 PLANNER_PROMPT = """You are a strategic planner for a writing assistant.
 
 AVAILABLE ACTIONS:
-- deep_research: Comprehensive multi-source research on a topic
+- deep_research: Comprehensive multi-source research on a topic, always use it once only in a plan
 - write_blog: Write a blog post/article (needs research context if topic requires facts)
 - search: Quick web search for a specific fact
 - scrape_url: Fetch full content from a single URL

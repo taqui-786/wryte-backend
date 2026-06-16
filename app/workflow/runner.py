@@ -36,9 +36,10 @@ async def my_agent(
             "writer_planning_node",
             "write_content",
             "humanize",
-            "task_planner",
-            "step_executor",
-            "step_completed"
+            "planner",
+            "step_complete",
+            "step_dispatcher",
+            "classifier",
         ]:
             continue
         if message_chunk:

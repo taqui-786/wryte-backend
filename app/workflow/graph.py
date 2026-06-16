@@ -4,6 +4,7 @@ from langgraph.graph.state import CompiledStateGraph
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from langgraph.store.postgres.aio import AsyncPostgresStore
 from langgraph.types import Send
+from app.workflow.action import ACTION_REGISTRY
 from app.workflow.nodes.classifer import classifier_node
 from app.workflow.nodes.planner import planner_node
 from app.workflow.nodes.replanner import replanner_node
@@ -97,6 +98,33 @@ def router_after_step_complete(state: ChatState) -> str:
     return "remember"
 
 
+def route_after_dispatcher(state: ChatState) -> list[Send] | str:
+    if not state.get("dispatch_ready"):
+        if state.get("dispatch_done"):
+            return "remember"
+        return "step_dispatcher"
+    plan = state.get("plan", [])
+    ready_ids = state.get("dispatch_ready_step_ids", [])
+    sends = []
+    for step_id in ready_ids:
+        step = next((s for s in plan if s["id"] == step_id), None)
+        if not step:
+            continue
+        step_state = {
+            **state,
+            "plan": state.get("plan", []),
+            "current_executing_ids": state.get("current_executing_ids", []),
+        }
+
+        action_spec = ACTION_REGISTRY.get(step["action"])
+        if action_spec and action_spec.state_setup:
+            step_state.update(action_spec.state_setup(state, step["params"]))
+
+        sends.append(Send("step_worker", {**step_state, "current_step_id": step["id"]}))
+
+    return sends
+
+
 def build_graph(
     checkpointer: AsyncPostgresSaver,
     store: AsyncPostgresStore,
@@ -163,7 +191,16 @@ def build_graph(
 
     # plan flow
     builder.add_edge("planner", "step_dispatcher")
-    builder.add_edge("step_worker", "step_complete")
+    builder.add_conditional_edges(
+        "step_dispatcher",
+        route_after_dispatcher,
+        {
+            "step_worker": "step_worker",
+            "remember": "remember",
+            "step_dispatcher": "step_dispatcher",
+        },
+    )
+    # builder.add_edge("step_worker", "step_complete") No Need now
     builder.add_conditional_edges(
         "step_complete",
         router_after_step_complete,
@@ -175,11 +212,13 @@ def build_graph(
     )
     builder.add_edge("replanner", "step_dispatcher")
 
+    # My Research Graph -------
     builder.add_conditional_edges("research_topics", route_to_research)
     builder.add_edge("research", "finalize_research")
     builder.add_edge("finalize_research", "research_answer")
     builder.add_edge("research_answer", "step_complete")
 
+    # My Writer Graph -------
     builder.add_edge("writer_planning_node", "write_content")
     builder.add_edge("write_content", "humanize")
     builder.add_conditional_edges(
@@ -191,11 +230,9 @@ def build_graph(
         },
     )
 
+
+
     builder.add_edge("remember", END)
-    # builder.add_conditional_edges("step_complete", route_after_step, {
-    #     "step_executor": "step_executor",
-    #     "remember": "remember",
-    # })
 
     return builder.compile(
         checkpointer=checkpointer,

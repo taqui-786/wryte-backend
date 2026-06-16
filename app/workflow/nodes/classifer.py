@@ -1,4 +1,5 @@
 from typing import Literal
+from langchain_core.messages import AIMessage
 from langgraph.runtime import Runtime
 from pydantic import BaseModel
 
@@ -43,5 +44,6 @@ async def classifier_node(state:ChatState,runtime:Runtime[UserContext]) -> dict:
     return {
         "task_type":result.task_type,
         "suggested_actions":result.suggested_actions,
-        "plan":None
+        "plan":None,
+        "messages": [AIMessage(content=f"Classified task as: {result.task_type}")]
     }

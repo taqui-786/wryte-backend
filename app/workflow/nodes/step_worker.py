@@ -1,32 +1,59 @@
+from typing import Literal
+from langgraph.types import Command
 from app.workflow.state import ChatState
 
 
-async def step_worker_node(state: ChatState) -> dict:
-    """Execute a single plan step. Returns state updates for that step."""
+async def step_worker_node(state: ChatState) -> Command[Literal["research_topics", "writer_planning_node", "step_complete"]]:
     step_id = state.get("current_step_id")
     plan = state.get("plan", [])
     
     # Find this step
     step = next((s for s in plan if s["id"] == step_id), None)
     if not step:
-        return {}
+        return Command(
+            update={"step_error": "Step not found"},
+            goto="step_complete")
     
     action = step["action"]
-    updates = {"plan": plan}  # Will be modified
-    
-    # The actual execution is delegated to existing subgraphs via flags
-    # This node just sets up the state and lets the graph route
+    params = step.get("params", {})
+
     if action == "deep_research":
-        # Already set by dispatcher: topic, research_requested
-        pass
-    elif action == "write_blog":
-        # Already set: writer_topic, writer_requested
-        pass
-    elif action == "search":
-        # Quick search - could use lighter research or direct tool
-        pass
-    # ... other actions
-    
-    # The subgraphs (research, writer) will run and eventually hit step_complete
-    # This worker just waits for them to finish
-    return updates
+          return Command(
+              update={
+                  "topic": params.get("topic", ""),
+                  "research_requested": True,
+                  "writer_requested": False,
+                  "current_step_id": step_id,
+              },
+              goto="research_topics",
+          )
+
+    if action == "search":
+          return Command(
+              update={
+                  "topic": params.get("query", ""),
+                  "research_requested": True,
+                  "writer_requested": False,
+                  "current_step_id": step_id,
+              },
+              goto="research_topics",
+          )
+
+    if action == "write_blog":
+          return Command(
+              update={
+                  "writer_topic": params.get("topic", ""),
+                  "writer_requested": True,
+                  "research_requested": False,
+                  "current_step_id": step_id,
+              },
+              goto="writer_planning_node",
+          )
+
+    return Command(
+        update={
+            "step_error": f"Unknown action: {action}",
+            "current_step_id": step_id,
+        },
+        goto="step_complete",
+      )

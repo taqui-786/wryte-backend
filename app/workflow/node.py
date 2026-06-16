@@ -19,6 +19,7 @@ from app.workflow.tool import (
     llm_classifier,
     llm_classifier_remeber_structured,
     llm_extractor,
+    llm_powerfull,
     llm_secondary,
     llm_style_check,
     llm_with_tool,
@@ -171,7 +172,7 @@ async def remember_node(state: ChatState, runtime: Runtime[UserContext]):
     # The user gets their "DONE" signal NOW.
     # The memory saves in the background.
     asyncio.create_task(extract_and_save_node(state, runtime))
-    return {}
+    return {"messages": [AIMessage(content="Saving memory in background...")]}
 
 
 # Extractor Node - Extract memories from user input
@@ -265,7 +266,7 @@ Rules:
     if len(queries) < 2:
         queries = [topic, f"{topic} overview", f"{topic} latest developments"][:4]
 
-    return {"research_topics": queries}
+    return {"research_topics": queries, "messages": [AIMessage(content=f"Generated {len(queries)} research queries for: {topic}")]}
 
 
 async def research_node(state: ChatState, runtime: Runtime[UserContext]) -> dict:
@@ -273,7 +274,7 @@ async def research_node(state: ChatState, runtime: Runtime[UserContext]) -> dict
     try:
         result = client.search.query(query=topic, location="US")
         if not result.results:
-            return {"research_results": [f"No search results for:{topic}"]}
+            return {"research_results": [f"No search results for:{topic}"], "messages": [AIMessage(content=f"No search results found for: {topic}")]}
 
         filtered_results = [
             {
@@ -313,7 +314,7 @@ Rules:
         )
         urls = response.urls[:3] if response.urls else []
         if not urls:
-            return {"research_results": [f"No relevant URLs found for:{topic}"]}
+            return {"research_results": [f"No relevant URLs found for:{topic}"], "messages": [AIMessage(content=f"No relevant URLs found for: {topic}")]}
 
         pages = client.fetch.get_contents(urls=urls, format="markdown")
         valid_pages = []
@@ -321,7 +322,7 @@ Rules:
             if page.text and len(page.text) > 100:
                 valid_pages.append({"url": page.url, "content": page.text})
         if not valid_pages:
-            return {"research_results": [f"No relevant content found for:{topic}"]}
+            return {"research_results": [f"No relevant content found for:{topic}"], "messages": [AIMessage(content=f"No valid content found for: {topic}")]}
         all_summaries = []
         for page in valid_pages:
             summary_user_content = f"""Analyze this page for topic: {topic}
@@ -367,17 +368,17 @@ Your output should prioritize information quality over length.
                 )
             )
             all_summaries.append(single_topic.summary)
-        return {"research_results": all_summaries}
+        return {"research_results": all_summaries, "messages": [AIMessage(content=f"Research complete: summarized {len(valid_pages)} sources for: {topic}")]}
     except Exception as e:
         print(f"Error in research_node for '{topic}': {e}")
-        return {"research_results": [f"Research failed for {topic}: {str(e)}"]}
+        return {"research_results": [f"Research failed for {topic}: {str(e)}"], "messages": [AIMessage(content=f"Research failed for {topic}: {str(e)}")]}
 
 
 async def finalize_research(state: ChatState) -> dict:
     all_summaries = state.get("research_results", [])
 
     if not all_summaries:
-        return {"final_research_report": "No research results to synthesize."}
+        return {"final_research_report": "No research results to synthesize.", "messages": [AIMessage(content="No research results to synthesize.")]}
 
     # Combine all summaries into a structured report
     combined_content = "\n\n---\n\n".join(all_summaries)
@@ -401,11 +402,11 @@ Be concise but thorough. Use markdown formatting."""
 
         response = await llm_secondary.ainvoke([HumanMessage(content=synthesis_prompt)])
 
-        return {"final_research_report": response.content}
+        return {"final_research_report": response.content, "messages": [AIMessage(content="Research report synthesized.")]}
     except Exception as e:
         print(f"Error in finalize_research: {e}")
         # Fallback: simple concatenation
-        return {"final_research_report": f"Research Report:\n\n{combined_content}"}
+        return {"final_research_report": f"Research Report:\n\n{combined_content}", "messages": [AIMessage(content="Research report generated (fallback).")]}
 
 
 async def research_answer_node(state: ChatState):
@@ -452,7 +453,11 @@ Be specific. For each section, say exactly what it should cover.
         ]
     )
     print(plan)
-    return {"writer_output": {"plan": plan.model_dump()}, "writer_iteration": 0}
+    return {
+        "writer_output": {"plan": plan.model_dump()},
+        "writer_iteration": 0,
+        "messages": [AIMessage(content=f"Created writing plan: {plan.title}")]
+    }
 
 
 # Write Content Node
@@ -505,7 +510,7 @@ SECTIONS TO WRITE:
 {sections_prompt}
 {correction_prompt}"""
 
-    response = await llm_secondary.ainvoke(
+    response = await llm_powerfull.ainvoke(
         [
             {"role": "system", "content": system_content},
             {"role": "user", "content": f"Write the full content for: {plan['title']}"},
@@ -513,7 +518,8 @@ SECTIONS TO WRITE:
     )
 
     return {
-        "writer_output": {"plan": plan, "draft": response.content, "feedback": feedback}
+        "writer_output": {"plan": plan, "draft": response.content, "feedback": feedback},
+        "messages": [AIMessage(content="Content draft written.")]
     }
 
 
@@ -556,7 +562,7 @@ ORIGINAL CONTENT:
 {draft}
 
 Return ONLY the rewritten content. No explanations, no meta-commentary."""
-    response = await llm_secondary.ainvoke(
+    response = await llm_powerfull.ainvoke(
         [
             {"role": "system", "content": humanize_prompt},
             {"role": "user", "content": "Rewrite this in the user's voice."},
@@ -581,7 +587,7 @@ Check for:
 3. ISSUES: Missing sections, broken markdown, placeholder images not resolved, orphaned references, incomplete sentences."""
 
     check: StyleCheck = await llm_style_check.ainvoke(
-        [{"role": "system", "content": check_prompt}]
+        [{"role": "system", "content": check_prompt},{"role": "user", "content": "Evaluate this content against the plan and memories."}]
     )
     if check.style_match_score < 6 or check.completeness_score < 6:
         check.should_loop = True
@@ -600,6 +606,7 @@ Check for:
                 ),
             },
             "writer_iteration": state["writer_iteration"] + 1,
+            "messages": [AIMessage(content=f"Quality check failed (style: {check.style_match_score}/10, completeness: {check.completeness_score}/10). Revising...")]
         }
     return {
         "writer_output": {
@@ -611,6 +618,7 @@ Check for:
         "editor_content": humanized,
         "writer_requested": False,
         "writer_iteration": 0,
+        "messages": [AIMessage(content=f"Content finalized. Style score: {check.style_match_score}/10, completeness: {check.completeness_score}/10.")]
     }
 
 

@@ -29,13 +29,22 @@ class ChatState(TypedDict):
     writer_iteration: int
 
     # Planning (DAG)
+    current_step_id: str | None
     task_type: Literal["chat", "tool", "plan"] | None
     suggested_actions: list[str] | None
     plan: list[PlanStep] | None
-    completed_step_ids: Annotated[list[str], add]  # Track completed for dependency check
+    completed_step_ids: Annotated[
+        list[str], add
+    ]  # Track completed for dependency check
     current_executing_ids: list[str]  # Steps currently running
     needs_replan: bool
     replan_reason: str | None
+    dispatch_ready: bool
+    dispatch_done: bool
+    dispatch_waiting: bool
+    dispatch_ready_step_ids: list[str]
+    step_error: str | None
+    step_results: Annotated[list[str], add]
 
 
 @dataclass

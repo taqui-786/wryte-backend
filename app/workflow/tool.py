@@ -128,21 +128,14 @@ llm = ChatNVIDIA(
     max_completion_tokens=16384,
     model_kwargs={"enable_thinking": True, "reasoning_budget": 3000},
 )
-# llm_classifier = ChatOpenRouter(
-#     model="nex-agi/nex-n2-pro:free",
-#     api_key=settings.OPENROUTER_API_KEY,
-#     temperature=0.3,
-#     reasoning={"effort": "low"},
-#     top_p=0.95,
-#     max_completion_tokens=2048,
-# )
+
 llm_powerfull = ChatNVIDIA(
-    model="stepfun-ai/step-3.7-flash",
+    model="qwen/qwen3.5-397b-a17b",
     api_key=settings.NVIDIA_API_KEY,
     temperature=0,
     top_p=0.95,
     max_completion_tokens=16384,
-    model_kwargs={"enable_thinking": False},
+    # model_kwargs={"enable_thinking": False},
 )
 
 llm_secondary = ChatNVIDIA(
@@ -192,7 +185,7 @@ class OnlyHandyReasearchTopic(BaseModel):
     urls:list[str]=Field(
         description="List of handy URLs from the data to research"
     )
-llm_OnlyHandyReasearchTopic = llm_classifier.with_structured_output(OnlyHandyReasearchTopic)
+llm_OnlyHandyReasearchTopic = llm_powerfull.with_structured_output(OnlyHandyReasearchTopic)
 
 class SummarizedPageContent(BaseModel):
     summary:str=Field(
@@ -204,7 +197,7 @@ llm_SummarizedPageContent = llm_classifier.with_structured_output(SummarizedPage
 class ResearchTopic(BaseModel):
     topics: list[str] = Field(description="List of 2-4 research search queries")
 
-llm_ResearchTopic = llm_classifier.with_structured_output(ResearchTopic)
+llm_ResearchTopic = llm_powerfull.with_structured_output(ResearchTopic)
 
 # Writer Plan schema
 class WritingSection(BaseModel):
@@ -220,7 +213,7 @@ class WritingPlan(BaseModel):
     estimated_word_count: int = Field(description="Target total word count")
     tone_guidance: str = Field(description="Tone, voice, and style instructions")
     
-llm_WriterPlan = llm_classifier.with_structured_output(WritingPlan)
+llm_WriterPlan = llm_powerfull.with_structured_output(WritingPlan)
 
 # Humanize Schema
 class StyleCheck(BaseModel):
@@ -229,7 +222,7 @@ class StyleCheck(BaseModel):
     issues: list[str] = Field(description="Specific issues")
     should_loop: bool = Field(description="True if content needs another iteration")
 
-llm_style_check = llm_classifier.with_structured_output(StyleCheck)
+llm_style_check = llm_powerfull.with_structured_output(StyleCheck)
 
 # update editor
 

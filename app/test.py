@@ -14,12 +14,12 @@ load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), "..", ".env"))
 
 # ── LLM ──────────────────────────────────────────────────────────────────────
 llm = ChatNVIDIA(
-    model="stepfun-ai/step-3.7-flash",
+    model="qwen/qwen3.5-397b-a17b",
     api_key=os.getenv("NVIDIA_API_KEY"),
     temperature=0,
     top_p=0.95,
     max_completion_tokens=16384,
-    model_kwargs={"enable_thinking": False},
+    # model_kwargs={"enable_thinking": False},
 )
 
 
