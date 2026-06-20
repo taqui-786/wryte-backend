@@ -1,4 +1,3 @@
-from collections.abc import AsyncGenerator
 from fastapi import APIRouter, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
 from app.services.chat import ChatService

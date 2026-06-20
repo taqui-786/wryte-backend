@@ -1,7 +1,7 @@
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate
 
-from app.workflow.tool import llm_secondary
+from app.workflow.llm import llm_secondary
 
 
 async def generate_title_for_chat(conversation: str) -> str:

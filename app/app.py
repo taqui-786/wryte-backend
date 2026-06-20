@@ -9,7 +9,7 @@ from psycopg_pool import AsyncConnectionPool
 from app.config import settings
 from app.routes import router
 from app.workflow.graph import build_graph
-from app.workflow.tool import EMBEDDING_DIMS, embeddings
+from app.workflow.llm import EMBEDDING_DIMS, embeddings
 
 
 def _psycopg_uri(url: str) -> str:

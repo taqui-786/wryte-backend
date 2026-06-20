@@ -1,6 +1,7 @@
 from typing import AsyncGenerator
 from langchain_core.messages import HumanMessage, messages_to_dict
 from langgraph.graph.state import CompiledStateGraph
+
 from app.workflow.state import UserContext
 
 
@@ -10,38 +11,22 @@ async def my_agent(
     thread_id: str,
     user_id: str,
     editor_content: str = "",
-) -> AsyncGenerator[str, None]:
+) -> AsyncGenerator[str,None]:
     config = {"configurable": {"thread_id": thread_id}}
     context = UserContext(user_id=user_id)
-
     async for chunk in workflow.astream(
         {
             "messages": [HumanMessage(content=user_input)],
             "editor_content": editor_content,
         },
         config=config,
-        stream_mode="messages",
         context=context,
+        stream_mode="messages",
         version="v2",
     ):
         if chunk.get("type") != "messages":
             continue
         message_chunk, metadata = chunk["data"]
-        print(metadata.get("langgraph_node"))
-        if metadata.get("langgraph_node") not in [
-            "chat_node",
-            "tools",
-            "research_answer",
-            "research_topics",
-            "writer_planning_node",
-            "write_content",
-            "humanize",
-            "planner",
-            "step_complete",
-            "step_dispatcher",
-            "classifier",
-        ]:
-            continue
         if message_chunk:
             yield {
                 "node": metadata.get("langgraph_node"),
