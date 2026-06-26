@@ -16,8 +16,9 @@ def build_graph(
     builder.add_node("chat", chat_node)
     builder.add_node("memory_save", extract_and_save_memory_node)
     builder.add_edge(START, "chat")
-    builder.add_edge("chat", "memory_save")
+    builder.add_edge(START, "memory_save")
     builder.add_edge("memory_save", END)
+    builder.add_edge("chat", END)
 
     return builder.compile(
         checkpointer=checkpointer,

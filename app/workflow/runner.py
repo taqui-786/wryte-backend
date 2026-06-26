@@ -27,6 +27,8 @@ async def my_agent(
         if chunk.get("type") != "messages":
             continue
         message_chunk, metadata = chunk["data"]
+        if metadata.get("langgraph_node") in ["memory_save"]:
+            continue
         if message_chunk:
             yield {
                 "node": metadata.get("langgraph_node"),

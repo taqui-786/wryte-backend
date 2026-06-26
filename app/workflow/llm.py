@@ -29,6 +29,12 @@ llm_secondary = ChatNVIDIA(
     max_completion_tokens=8192,
     model_kwargs={"enable_thinking": False},
 )
+llm_structure = ChatNVIDIA(
+    model="openai/gpt-oss-120b",
+    api_key=settings.NVIDIA_API_KEY,
+    temperature=0,
+    max_completion_tokens=8192,
+)
 
 EMBEDDING_DIMS = 1024
 embeddings = NVIDIAEmbeddings(

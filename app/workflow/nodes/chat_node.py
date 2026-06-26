@@ -1,7 +1,8 @@
 
 from langchain_core.messages import SystemMessage
+from langgraph.runtime import Runtime
 from app.workflow.llm import llm
-from app.workflow.state import WorkflowState
+from app.workflow.state import UserContext, WorkflowState
 
 
 SYSTEM_PROMPT_TEMPLATE = """\
@@ -26,15 +27,24 @@ When relevant, draw on these memories about the user's writing style:
 """
 
 
-async def chat_node(state:WorkflowState):
-    memory_lines = state.get("memory_lines", [])
-    if memory_lines:
-        memory_context = "\n".join(f"- {memory}" for memory in memory_lines)
-    else:
+async def chat_node(state: WorkflowState, runtime: Runtime[UserContext]):
+    try:
+        memory_namespace = ("memories", runtime.context.user_id)
+        memories = await runtime.store.asearch(
+            (memory_namespace,), query=None, limit=10
+        )
+        if memories:
+            memory_context = "\n".join(f"- {m.value['data']}" for m in memories)
+        else:
+            memory_context = "No Memories yet"
+    except Exception:
         memory_context = "No Memories yet"
+
     system_prompt = SYSTEM_PROMPT_TEMPLATE.format(memory_context=memory_context)
+    messages = state["messages"]
     response = await llm.ainvoke([
-        SystemMessage(content=system_prompt)
+        SystemMessage(content=system_prompt),
+        *messages,
     ])
     return {"messages": [response]}
     
